@@ -62,6 +62,81 @@ PLAYERS = {
         "market": "player_rush_yds",
         "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
     },
+    "justin_herbert": {
+        "name": "Justin Herbert", "team": "Chargers", "espn_id": 4241457,
+        "market": "player_pass_yds",
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "dak_prescott": {
+        "name": "Dak Prescott", "team": "Cowboys", "espn_id": 2577417,
+        "market": "player_pass_yds",
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "jalen_hurts": {
+        "name": "Jalen Hurts", "team": "Eagles", "espn_id": 4040715,
+        "market": "player_pass_yds",
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "brock_purdy": {
+        "name": "Brock Purdy", "team": "49ers", "espn_id": 4361741,
+        "market": "player_pass_yds",
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "tua_tagovailoa": {
+        "name": "Tua Tagovailoa", "team": "Dolphins", "espn_id": 4241470,
+        "market": "player_pass_yds",
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "aj_brown": {
+        "name": "A.J. Brown", "team": "Eagles", "espn_id": 4047658,
+        "market": "player_reception_yds",
+        "espn_stat_map": {"rec_yds": 2, "receptions": 0}
+    },
+    "jamarr_chase": {
+        "name": "Ja'Marr Chase", "team": "Bengals", "espn_id": 4362628,
+        "market": "player_reception_yds",
+        "espn_stat_map": {"rec_yds": 2, "receptions": 0}
+    },
+    "amonra_stbrown": {
+        "name": "Amon-Ra St. Brown", "team": "Lions", "espn_id": 4374302,
+        "market": "player_reception_yds",
+        "espn_stat_map": {"rec_yds": 2, "receptions": 0}
+    },
+    "davante_adams": {
+        "name": "Davante Adams", "team": "Raiders", "espn_id": 16800,
+        "market": "player_reception_yds",
+        "espn_stat_map": {"rec_yds": 2, "receptions": 0}
+    },
+    "cooper_kupp": {
+        "name": "Cooper Kupp", "team": "Rams", "espn_id": 3054211,
+        "market": "player_reception_yds",
+        "espn_stat_map": {"rec_yds": 2, "receptions": 0}
+    },
+    "derrick_henry": {
+        "name": "Derrick Henry", "team": "Ravens", "espn_id": 3043078,
+        "market": "player_rush_yds",
+        "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
+    },
+    "bijan_robinson": {
+        "name": "Bijan Robinson", "team": "Falcons", "espn_id": 4430807,
+        "market": "player_rush_yds",
+        "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
+    },
+    "josh_jacobs": {
+        "name": "Josh Jacobs", "team": "Packers", "espn_id": 4047646,
+        "market": "player_rush_yds",
+        "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
+    },
+    "travis_etienne": {
+        "name": "Travis Etienne", "team": "Jaguars", "espn_id": 4241462,
+        "market": "player_rush_yds",
+        "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
+    },
+    "james_cook": {
+        "name": "James Cook", "team": "Bills", "espn_id": 4379394,
+        "market": "player_rush_yds",
+        "espn_stat_map": {"rush_yds": 1, "rush_att": 0}
+    },
 }
 
 intents = discord.Intents.default()
