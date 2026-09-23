@@ -244,8 +244,55 @@ async def on_ready():
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong! The bot is online and working!")
 
-
-# ... imports, PLAYERS, ping command above ...
+@tree.command(name="roster", description="List all available players and their markets")
+async def roster(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    # Group players by position based on their markets
+    qbs = []
+    wrs = []
+    rbs = []
+    
+    for key, info in PLAYERS.items():
+        markets = [m["display"] for m in info["markets"]]
+        entry = f"`{key}` — {info['name']} ({info['team']})"
+        
+        # Determine position by checking market types
+        market_keys = [m["key"] for m in info["markets"]]
+        if "player_pass_yds" in market_keys:
+            qbs.append(entry)
+        elif "player_rush_yds" in market_keys:
+            rbs.append(entry)
+        else:
+            wrs.append(entry)
+    
+    embed = discord.Embed(
+        title="📋 Available Players",
+        description=f"Use `/props player:<name>` to analyze any player.\nTotal roster: **{len(PLAYERS)} players**",
+        color=0x3498db
+    )
+    
+    if qbs:
+        embed.add_field(
+            name=f"🏈 Quarterbacks ({len(qbs)})",
+            value="\n".join(qbs) if qbs else "None",
+            inline=False
+        )
+    if wrs:
+        embed.add_field(
+            name=f"🏃 Wide Receivers ({len(wrs)})",
+            value="\n".join(wrs) if wrs else "None",
+            inline=False
+        )
+    if rbs:
+        embed.add_field(
+            name=f"💨 Running Backs ({len(rbs)})",
+            value="\n".join(rbs) if rbs else "None",
+            inline=False
+        )
+    
+    embed.set_footer(text="More players coming soon | Data from ESPN & PropLine")
+    await interaction.followup.send(embed=embed)
 
 @tree.command(name="props", description="Get NFL player prop analysis")
 @app_commands.describe(player="Player name (e.g., jordan_love, justin_jefferson)")
