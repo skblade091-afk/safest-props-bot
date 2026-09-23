@@ -1,0 +1,10 @@
+# Secrets - NEVER commit this
+.env
+
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# VS Code settings
+.vscode/
