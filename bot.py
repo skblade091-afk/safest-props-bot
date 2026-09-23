@@ -161,8 +161,7 @@ async def ping(interaction: discord.Interaction):
 @tree.command(name="props", description="Get NFL player prop analysis")
 @app_commands.describe(player="Player name (e.g., jordan_love, patrick_mahomes, josh_allen)")
 async def props(interaction: discord.Interaction, player: str):
-    await interaction.response.defer()
-    
+    await interaction.response.defer()   
     player_key = player.lower()
     if player_key not in PLAYERS:
         await interaction.followup.send(f"❌ Player not found. Try one of these: {', '.join(PLAYERS.keys())}")
@@ -180,8 +179,18 @@ async def props(interaction: discord.Interaction, player: str):
         return
     
     stat_key = list(player_info["espn_stat_map"].keys())[0]
-    avg_stat = data[stat_key].tail(5).mean()
+    recent_games = data[stat_key].tail(5)
+    avg_stat = recent_games.mean()
+    games_played = len(recent_games)
 
+    # Guard against small sample sizes (preseason, injury returns, etc.)
+    if games_played < 3:
+        await interaction.followup.send(
+            f"⚠️ {player_name} only has {games_played} game(s) in the last 5. "
+            f"Not enough data for a reliable prediction. Try again after they've played more games."
+        )
+        return
+    
     # --- 2. Try to fetch real odds from PropLine ---
     odds_client = OddsClient()
     available_lines = odds_client.get_player_props(player_name, player_info["team"], player_info["market"])
