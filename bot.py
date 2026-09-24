@@ -379,22 +379,17 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong! The bot is online and working!")
 
 
-@tree.command(name="roster", description="List all available players")
-async def roster(interaction: discord.Interaction):
+@tree.command(name="roster", description="List all available players, optionally filtered by sport")
+@app_commands.describe(sport="Optional: filter to just one sport")
+@app_commands.choices(sport=[
+    app_commands.Choice(name="NFL", value="nfl"),
+    app_commands.Choice(name="NBA", value="nba"),
+])
+async def roster(interaction: discord.Interaction, sport: str = None):
     await interaction.response.defer()
     
-    nfl_qbs, nfl_wrs, nfl_rbs = [], [], []
-    for key, info in PLAYERS.items():
-        entry = f"`{key}` — {info['name']} ({info['team']})"
-        market_keys = [m["key"] for m in info["markets"]]
-        if "player_pass_yds" in market_keys:
-            nfl_qbs.append(entry)
-        elif "player_rush_yds" in market_keys:
-            nfl_rbs.append(entry)
-        else:
-            nfl_wrs.append(entry)
-    
-    nba_entries = [f"`{key}` — {info['name']} ({info['team']})" for key, info in NBA_PLAYERS.items()]
+    show_nfl = sport in (None, "nfl")
+    show_nba = sport in (None, "nba")
     
     embed = discord.Embed(
         title="📋 Available Players",
@@ -402,45 +397,69 @@ async def roster(interaction: discord.Interaction):
         color=0x3498db
     )
     
-    if nfl_qbs:
-        embed.add_field(name=f"🏈 NFL QBs ({len(nfl_qbs)})", value="\n".join(nfl_qbs), inline=False)
-    if nfl_wrs:
-        embed.add_field(name=f"🏈 NFL WRs ({len(nfl_wrs)})", value="\n".join(nfl_wrs), inline=False)
-    if nfl_rbs:
-        embed.add_field(name=f"🏈 NFL RBs ({len(nfl_rbs)})", value="\n".join(nfl_rbs), inline=False)
-    if nba_entries:
-        embed.add_field(name=f"🏀 NBA Players ({len(nba_entries)})", value="\n".join(nba_entries), inline=False)
+    if show_nfl:
+        nfl_qbs, nfl_wrs, nfl_rbs = [], [], []
+        for key, info in PLAYERS.items():
+            entry = f"`{key}` — {info['name']} ({info['team']})"
+            market_keys = [m["key"] for m in info["markets"]]
+            if "player_pass_yds" in market_keys:
+                nfl_qbs.append(entry)
+            elif "player_rush_yds" in market_keys:
+                nfl_rbs.append(entry)
+            else:
+                nfl_wrs.append(entry)
+        
+        if nfl_qbs:
+            embed.add_field(name=f"🏈 NFL QBs ({len(nfl_qbs)})", value="\n".join(nfl_qbs), inline=False)
+        if nfl_wrs:
+            embed.add_field(name=f"🏈 NFL WRs ({len(nfl_wrs)})", value="\n".join(nfl_wrs), inline=False)
+        if nfl_rbs:
+            embed.add_field(name=f"🏈 NFL RBs ({len(nfl_rbs)})", value="\n".join(nfl_rbs), inline=False)
     
-    embed.set_footer(text="Use /props player:<name> to analyze")
+    if show_nba:
+        nba_entries = [f"`{key}` — {info['name']} ({info['team']})" for key, info in NBA_PLAYERS.items()]
+        if nba_entries:
+            embed.add_field(name=f"🏀 NBA Players ({len(nba_entries)})", value="\n".join(nba_entries), inline=False)
+    
+    embed.set_footer(text="Use /props sport:<sport> player:<name> to analyze")
     await interaction.followup.send(embed=embed)
 
 
-@tree.command(name="props", description="Get player prop analysis (NFL or NBA)")
-@app_commands.describe(player="Player name (e.g., jordan_love, lebron, curry, luka)")
-async def props(interaction: discord.Interaction, player: str):
+@tree.command(name="props", description="Get player prop analysis")
+@app_commands.describe(sport="Which sport to analyze", player="Player name (see /roster)")
+@app_commands.choices(sport=[
+    app_commands.Choice(name="NFL", value="nfl"),
+    app_commands.Choice(name="NBA", value="nba"),
+])
+async def props(interaction: discord.Interaction, sport: str, player: str):
     await interaction.response.defer()
     
     player_key = player.lower()
     
-    # Check both NFL and NBA rosters
-    if player_key in PLAYERS:
-        player_info = PLAYERS[player_key]
+    # Pick the right database based on selected sport
+    if sport == "nfl":
+        roster = PLAYERS
         sport_key = "americanfootball_nfl"
         espn_sport = "football"
         espn_league = "nfl"
         league_label = "NFL"
         embed_color = 0x00ff00
-    elif player_key in NBA_PLAYERS:
-        player_info = NBA_PLAYERS[player_key]
+    else:  # nba
+        roster = NBA_PLAYERS
         sport_key = "basketball_nba"
         espn_sport = "basketball"
         espn_league = "nba"
         league_label = "NBA"
         embed_color = 0xff6b00
-    else:
-        await interaction.followup.send("❌ Player not found. Try `/roster` to see all players.")
+    
+    if player_key not in roster:
+        await interaction.followup.send(
+            f"❌ Player '{player}' not found in the {league_label} roster. "
+            f"Try `/roster sport:{sport}` to see available players."
+        )
         return
-
+    
+    player_info = roster[player_key]
     player_name = player_info["name"]
     
     espn = ESPNClient()
@@ -510,21 +529,39 @@ async def props(interaction: discord.Interaction, player: str):
     await interaction.followup.send(embed=embed)
 
 
-@tree.command(name="top", description="Scan all NFL players and show top prop picks")
-async def top(interaction: discord.Interaction):
+@tree.command(name="top", description="Scan all players and show today's top prop picks")
+@app_commands.describe(sport="Which sport to scan")
+@app_commands.choices(sport=[
+    app_commands.Choice(name="NFL", value="nfl"),
+    app_commands.Choice(name="NBA", value="nba"),
+])
+async def top(interaction: discord.Interaction, sport: str):
     await interaction.response.defer()
     
-    await interaction.followup.send("🔍 Scanning all players... This takes about 30 seconds.")
+    if sport == "nfl":
+        roster = PLAYERS
+        sport_key = "americanfootball_nfl"
+        espn_sport = "football"
+        espn_league = "nfl"
+        league_label = "NFL"
+    else:
+        roster = NBA_PLAYERS
+        sport_key = "basketball_nba"
+        espn_sport = "basketball"
+        espn_league = "nba"
+        league_label = "NBA"
+    
+    await interaction.followup.send(f"🔍 Scanning all {league_label} players... This may take 30 seconds.")
     
     espn = ESPNClient()
     odds_client = OddsClient()
     results = []
     
-    for player_key, info in PLAYERS.items():
+    for player_key, info in roster.items():
         player_name = info["name"]
         
         try:
-            data = espn.get_player_gamelog('football', 'nfl', info["espn_id"], info["espn_stat_map"])
+            data = espn.get_player_gamelog(espn_sport, espn_league, info["espn_id"], info["espn_stat_map"])
             
             if data is None or data.empty or len(data) < 2:
                 continue
@@ -540,7 +577,7 @@ async def top(interaction: discord.Interaction):
             avg_stat = recent_games.mean()
             
             available_lines = odds_client.get_player_props(
-                player_name, info["team"], primary_market["key"], "americanfootball_nfl"
+                player_name, info["team"], primary_market["key"], sport_key
             )
             
             if not available_lines:
@@ -568,15 +605,17 @@ async def top(interaction: discord.Interaction):
             continue
     
     if not results:
-        await interaction.followup.send("❌ No props with live odds available right now. Try again closer to game time.")
+        await interaction.followup.send(
+            f"❌ No {league_label} props with live odds available right now. Try again closer to game time."
+        )
         return
     
     results.sort(key=lambda x: x["abs_edge"], reverse=True)
     top_picks = results[:5]
     
     embed = discord.Embed(
-        title="🏆 Today's Top 5 NFL Prop Picks",
-        description=f"Scanned {len(PLAYERS)} players, found {len(results)} with live odds",
+        title=f"🏆 Today's Top 5 {league_label} Prop Picks",
+        description=f"Scanned {len(roster)} players, found {len(results)} with live odds",
         color=0xffd700
     )
     
