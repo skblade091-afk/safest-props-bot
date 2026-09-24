@@ -8,24 +8,26 @@ API_KEY = os.getenv("PROPLINE_API_KEY")
 BASE_URL = "https://api.prop-line.com"
 HEADERS = {"X-API-Key": API_KEY}
 
+
 class OddsClient:
-    def get_player_props(self, player_name: str, team_name: str, market_key: str = "player_pass_yds"):
+    def get_player_props(self, player_name: str, team_name: str, market_key: str = "player_pass_yds", sport_key: str = "americanfootball_nfl"):
         """
         Fetches available lines for a specific player and market.
+        Works for both NFL and NBA by accepting a sport_key.
         Returns a list of dicts: [{'line': 250, 'price': -115}, ...]
         Returns an empty list if no data is available.
         """
-        sport_key = "americanfootball_nfl"
         all_lines = []
         target_event_id = None
 
         try:
-            # 1. Get all NFL events to find the player's game
+            # 1. Get all events for the given sport
             events_url = f"{BASE_URL}/v1/sports/{sport_key}/events"
             events_response = requests.get(events_url, headers=HEADERS, timeout=10)
             events_response.raise_for_status()
             events = events_response.json()
 
+            # Find the event where the player's team is playing
             for event in events:
                 home = event.get('home_team', '')
                 away = event.get('away_team', '')
@@ -51,13 +53,23 @@ class OddsClient:
                 for market in bookmaker.get('markets', []):
                     for outcome in market.get('outcomes', []):
                         if player_name.lower() in outcome.get('description', '').lower():
-                            match = re.search(r'(\d+)\+', outcome.get('name', ''))
-                            if match:
-                                line = int(match.group(1))
-                                price = outcome.get('price')
-                                all_lines.append({'line': line, 'price': price})
+                            # NBA-style: direct point value (e.g., 24.5)
+                            point_value = outcome.get('point')
+                            if point_value is not None:
+                                all_lines.append({
+                                    'line': point_value,
+                                    'price': outcome.get('price')
+                                })
+                            else:
+                                # NFL-style: extract from "250+ Passing Yards"
+                                match = re.search(r'(\d+)\+', outcome.get('name', ''))
+                                if match:
+                                    all_lines.append({
+                                        'line': int(match.group(1)),
+                                        'price': outcome.get('price')
+                                    })
 
-            # 4. Remove duplicates and sort
+            # 4. Remove duplicates and sort by line
             unique_lines = {item['line']: item for item in all_lines}.values()
             return sorted(unique_lines, key=lambda x: x['line'])
 
