@@ -10,9 +10,11 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
-# Player database: name, team, ESPN ID, market key, and ESPN stat_map
+# ============================================================
+# NFL PLAYER DATABASE
+# ============================================================
 PLAYERS = {
-    # --- QBs: Passing Yards + Passing TDs ---
+    # --- QBs ---
     "jordan_love": {
         "name": "Jordan Love", "team": "Packers", "espn_id": 4036378,
         "markets": [
@@ -118,7 +120,7 @@ PLAYERS = {
         "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
     },
 
-    # --- WRs: Receiving Yards + Receptions ---
+    # --- WRs ---
     "justin_jefferson": {
         "name": "Justin Jefferson", "team": "Vikings", "espn_id": 4241478,
         "markets": [
@@ -184,7 +186,7 @@ PLAYERS = {
         "espn_stat_map": {"rec_yds": 2, "receptions": 0}
     },
 
-    # --- RBs: Rushing Yards + Rushing TDs + Receptions ---
+    # --- RBs ---
     "christian_mccaffrey": {
         "name": "Christian McCaffrey", "team": "49ers", "espn_id": 3117251,
         "markets": [
@@ -259,7 +261,9 @@ PLAYERS = {
     },
 }
 
-    # --- NBA Player database ---
+# ============================================================
+# NBA PLAYER DATABASE (corrected stat indices: reb=7, ast=8, pts=13)
+# ============================================================
 NBA_PLAYERS = {
     "lebron": {
         "name": "LeBron James", "team": "Lakers", "espn_id": 1966,
@@ -268,7 +272,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "curry": {
         "name": "Stephen Curry", "team": "Warriors", "espn_id": 3975,
@@ -277,7 +281,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "luka": {
         "name": "Luka Doncic", "team": "Lakers", "espn_id": 3945274,
@@ -286,7 +290,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "jokic": {
         "name": "Nikola Jokic", "team": "Nuggets", "espn_id": 3112335,
@@ -295,7 +299,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "giannis": {
         "name": "Giannis Antetokounmpo", "team": "Bucks", "espn_id": 3032977,
@@ -304,7 +308,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "tatum": {
         "name": "Jayson Tatum", "team": "Celtics", "espn_id": 4065648,
@@ -313,7 +317,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "embiid": {
         "name": "Joel Embiid", "team": "76ers", "espn_id": 3059318,
@@ -322,7 +326,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "durant": {
         "name": "Kevin Durant", "team": "Suns", "espn_id": 3202,
@@ -331,7 +335,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "booker": {
         "name": "Devin Booker", "team": "Suns", "espn_id": 3136195,
@@ -340,7 +344,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
     "anthony_davis": {
         "name": "Anthony Davis", "team": "Lakers", "espn_id": 3059674,
@@ -349,7 +353,7 @@ NBA_PLAYERS = {
             {"key": "player_rebounds", "stat": "reb", "display": "Rebounds"},
             {"key": "player_assists", "stat": "ast", "display": "Assists"},
         ],
-        "espn_stat_map": {"min": 0, "reb": 4, "ast": 5, "pts": 10}
+        "espn_stat_map": {"reb": 7, "ast": 8, "pts": 13}
     },
 }
 
@@ -375,11 +379,10 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong! The bot is online and working!")
 
 
-@tree.command(name="roster", description="List all available players and their markets")
+@tree.command(name="roster", description="List all available players")
 async def roster(interaction: discord.Interaction):
     await interaction.response.defer()
     
-    # NFL players
     nfl_qbs, nfl_wrs, nfl_rbs = [], [], []
     for key, info in PLAYERS.items():
         entry = f"`{key}` — {info['name']} ({info['team']})"
@@ -391,7 +394,6 @@ async def roster(interaction: discord.Interaction):
         else:
             nfl_wrs.append(entry)
     
-    # NBA players
     nba_entries = [f"`{key}` — {info['name']} ({info['team']})" for key, info in NBA_PLAYERS.items()]
     
     embed = discord.Embed(
@@ -409,7 +411,7 @@ async def roster(interaction: discord.Interaction):
     if nba_entries:
         embed.add_field(name=f"🏀 NBA Players ({len(nba_entries)})", value="\n".join(nba_entries), inline=False)
     
-    embed.set_footer(text="Use /props player:<name> to analyze | Data from ESPN & PropLine")
+    embed.set_footer(text="Use /props player:<name> to analyze")
     await interaction.followup.send(embed=embed)
 
 
@@ -427,14 +429,16 @@ async def props(interaction: discord.Interaction, player: str):
         espn_sport = "football"
         espn_league = "nfl"
         league_label = "NFL"
+        embed_color = 0x00ff00
     elif player_key in NBA_PLAYERS:
         player_info = NBA_PLAYERS[player_key]
         sport_key = "basketball_nba"
         espn_sport = "basketball"
         espn_league = "nba"
         league_label = "NBA"
+        embed_color = 0xff6b00
     else:
-        await interaction.followup.send(f"❌ Player not found. Try `/roster` to see all players.")
+        await interaction.followup.send("❌ Player not found. Try `/roster` to see all players.")
         return
 
     player_name = player_info["name"]
@@ -458,7 +462,7 @@ async def props(interaction: discord.Interaction, player: str):
     embed = discord.Embed(
         title=f"{player_name} - {league_label} Prop Analysis",
         description=f"Team: {player_info['team']} | Based on last 5 games",
-        color=0x00ff00 if league_label == "NFL" else 0xff6b00
+        color=embed_color
     )
     
     for market in player_info["markets"]:
@@ -506,7 +510,7 @@ async def props(interaction: discord.Interaction, player: str):
     await interaction.followup.send(embed=embed)
 
 
-@tree.command(name="top", description="Scan all players and show today's top prop picks")
+@tree.command(name="top", description="Scan all NFL players and show top prop picks")
 async def top(interaction: discord.Interaction):
     await interaction.response.defer()
     
@@ -536,7 +540,7 @@ async def top(interaction: discord.Interaction):
             avg_stat = recent_games.mean()
             
             available_lines = odds_client.get_player_props(
-                player_name, info["team"], primary_market["key"]
+                player_name, info["team"], primary_market["key"], "americanfootball_nfl"
             )
             
             if not available_lines:
@@ -571,7 +575,7 @@ async def top(interaction: discord.Interaction):
     top_picks = results[:5]
     
     embed = discord.Embed(
-        title="🏆 Today's Top 5 Prop Picks",
+        title="🏆 Today's Top 5 NFL Prop Picks",
         description=f"Scanned {len(PLAYERS)} players, found {len(results)} with live odds",
         color=0xffd700
     )
