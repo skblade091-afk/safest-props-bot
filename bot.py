@@ -93,7 +93,31 @@ PLAYERS = {
         ],
         "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
     },
-    
+    "trevor_lawrence": {
+        "name": "Trevor Lawrence", "team": "Jaguars", "espn_id": 4360310,
+        "markets": [
+            {"key": "player_pass_yds", "stat": "pass_yds", "display": "Passing Yards"},
+            {"key": "player_pass_tds", "stat": "pass_td", "display": "Passing TDs"},
+        ],
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "kyler_murray": {
+        "name": "Kyler Murray", "team": "Cardinals", "espn_id": 3917315,
+        "markets": [
+            {"key": "player_pass_yds", "stat": "pass_yds", "display": "Passing Yards"},
+            {"key": "player_pass_tds", "stat": "pass_td", "display": "Passing TDs"},
+        ],
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+    "jared_goff": {
+        "name": "Jared Goff", "team": "Lions", "espn_id": 3046779,
+        "markets": [
+            {"key": "player_pass_yds", "stat": "pass_yds", "display": "Passing Yards"},
+            {"key": "player_pass_tds", "stat": "pass_td", "display": "Passing TDs"},
+        ],
+        "espn_stat_map": {"pass_yds": 2, "pass_td": 5}
+    },
+
     # --- WRs: Receiving Yards + Receptions ---
     "justin_jefferson": {
         "name": "Justin Jefferson", "team": "Vikings", "espn_id": 4241478,
@@ -159,7 +183,7 @@ PLAYERS = {
         ],
         "espn_stat_map": {"rec_yds": 2, "receptions": 0}
     },
-    
+
     # --- RBs: Rushing Yards + Rushing TDs + Receptions ---
     "christian_mccaffrey": {
         "name": "Christian McCaffrey", "team": "49ers", "espn_id": 3117251,
@@ -224,13 +248,24 @@ PLAYERS = {
         ],
         "espn_stat_map": {"rush_yds": 1, "rush_td": 3, "receptions": 5}
     },
+    "jahmyr_gibbs": {
+        "name": "Jahmyr Gibbs", "team": "Lions", "espn_id": 4429795,
+        "markets": [
+            {"key": "player_rush_yds", "stat": "rush_yds", "display": "Rushing Yards"},
+            {"key": "player_rush_tds", "stat": "rush_td", "display": "Rushing TDs"},
+            {"key": "player_receptions", "stat": "receptions", "display": "Receptions"},
+        ],
+        "espn_stat_map": {"rush_yds": 1, "rush_td": 3, "receptions": 5}
+    },
 }
 
+# --- Discord client setup ---
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
+# --- Bot events ---
 @client.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
@@ -240,24 +275,22 @@ async def on_ready():
     print("✅ Slash commands synced to your server!")
 
 
+# --- Commands ---
 @tree.command(name="ping", description="Test if the bot is online")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong! The bot is online and working!")
+
 
 @tree.command(name="roster", description="List all available players and their markets")
 async def roster(interaction: discord.Interaction):
     await interaction.response.defer()
     
-    # Group players by position based on their markets
     qbs = []
     wrs = []
     rbs = []
     
     for key, info in PLAYERS.items():
-        markets = [m["display"] for m in info["markets"]]
         entry = f"`{key}` — {info['name']} ({info['team']})"
-        
-        # Determine position by checking market types
         market_keys = [m["key"] for m in info["markets"]]
         if "player_pass_yds" in market_keys:
             qbs.append(entry)
@@ -273,26 +306,15 @@ async def roster(interaction: discord.Interaction):
     )
     
     if qbs:
-        embed.add_field(
-            name=f"🏈 Quarterbacks ({len(qbs)})",
-            value="\n".join(qbs) if qbs else "None",
-            inline=False
-        )
+        embed.add_field(name=f"🏈 Quarterbacks ({len(qbs)})", value="\n".join(qbs), inline=False)
     if wrs:
-        embed.add_field(
-            name=f"🏃 Wide Receivers ({len(wrs)})",
-            value="\n".join(wrs) if wrs else "None",
-            inline=False
-        )
+        embed.add_field(name=f"🏃 Wide Receivers ({len(wrs)})", value="\n".join(wrs), inline=False)
     if rbs:
-        embed.add_field(
-            name=f"💨 Running Backs ({len(rbs)})",
-            value="\n".join(rbs) if rbs else "None",
-            inline=False
-        )
+        embed.add_field(name=f"💨 Running Backs ({len(rbs)})", value="\n".join(rbs), inline=False)
     
     embed.set_footer(text="More players coming soon | Data from ESPN & PropLine")
     await interaction.followup.send(embed=embed)
+
 
 @tree.command(name="props", description="Get NFL player prop analysis")
 @app_commands.describe(player="Player name (e.g., jordan_love, justin_jefferson)")
@@ -301,13 +323,12 @@ async def props(interaction: discord.Interaction, player: str):
     
     player_key = player.lower()
     if player_key not in PLAYERS:
-        await interaction.followup.send(f"❌ Player not found. Try one of these: {', '.join(PLAYERS.keys())}")
+        await interaction.followup.send(f"❌ Player not found. Try `/roster` to see all players.")
         return
 
     player_info = PLAYERS[player_key]
     player_name = player_info["name"]
     
-    # --- 1. Fetch ESPN Stats ---
     espn = ESPNClient()
     data = espn.get_player_gamelog('football', 'nfl', player_info["espn_id"], player_info["espn_stat_map"])
     
@@ -315,7 +336,6 @@ async def props(interaction: discord.Interaction, player: str):
         await interaction.followup.send("❌ Could not fetch player data from ESPN.")
         return
     
-    # Sample size guard
     if len(data) < 3:
         await interaction.followup.send(
             f"⚠️ {player_name} only has {len(data)} game(s) on record. "
@@ -323,7 +343,6 @@ async def props(interaction: discord.Interaction, player: str):
         )
         return
     
-    # --- 2. Build an embed and loop through each market ---
     odds_client = OddsClient()
     
     embed = discord.Embed(
@@ -372,6 +391,89 @@ async def props(interaction: discord.Interaction, player: str):
     if len(embed.fields) == 0:
         await interaction.followup.send(f"❌ No market data available for {player_name} yet.")
         return
+    
+    embed.set_footer(text="Data from ESPN & PropLine | Bet responsibly.")
+    await interaction.followup.send(embed=embed)
+
+
+@tree.command(name="top", description="Scan all players and show today's top prop picks")
+async def top(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    await interaction.followup.send("🔍 Scanning all players... This takes about 30 seconds.")
+    
+    espn = ESPNClient()
+    odds_client = OddsClient()
+    results = []
+    
+    for player_key, info in PLAYERS.items():
+        player_name = info["name"]
+        
+        try:
+            data = espn.get_player_gamelog('football', 'nfl', info["espn_id"], info["espn_stat_map"])
+            
+            if data is None or data.empty or len(data) < 2:
+                continue
+            
+            primary_market = info["markets"][0]
+            stat_key = primary_market["stat"]
+            display_name = primary_market["display"]
+            
+            if stat_key not in data.columns:
+                continue
+            
+            recent_games = data[stat_key].tail(5)
+            avg_stat = recent_games.mean()
+            
+            available_lines = odds_client.get_player_props(
+                player_name, info["team"], primary_market["key"]
+            )
+            
+            if not available_lines:
+                continue
+            
+            closest_line = min(available_lines, key=lambda x: abs(x['line'] - avg_stat))
+            line_value = closest_line['line']
+            price = closest_line['price']
+            
+            edge = avg_stat - line_value
+            recommendation = "OVER" if edge > 0 else "UNDER"
+            
+            results.append({
+                "player": player_name,
+                "market": display_name,
+                "avg": avg_stat,
+                "line": line_value,
+                "price": price,
+                "edge": edge,
+                "recommendation": recommendation,
+                "abs_edge": abs(edge)
+            })
+        except Exception as e:
+            print(f"Error processing {player_name}: {e}")
+            continue
+    
+    if not results:
+        await interaction.followup.send("❌ No props with live odds available right now. Try again closer to game time.")
+        return
+    
+    results.sort(key=lambda x: x["abs_edge"], reverse=True)
+    top_picks = results[:5]
+    
+    embed = discord.Embed(
+        title="🏆 Today's Top 5 Prop Picks",
+        description=f"Scanned {len(PLAYERS)} players, found {len(results)} with live odds",
+        color=0xffd700
+    )
+    
+    for i, pick in enumerate(top_picks, 1):
+        color_emoji = "🟢" if pick["recommendation"] == "OVER" else "🔴"
+        field_name = f"{color_emoji} #{i} {pick['player']} — {pick['market']}"
+        field_value = (
+            f"Avg: **{pick['avg']:.1f}** vs Line: **{pick['line']}+** | Odds: **{pick['price']}**\n"
+            f"→ **{pick['recommendation']}** (Edge: {pick['edge']:+.1f})"
+        )
+        embed.add_field(name=field_name, value=field_value, inline=False)
     
     embed.set_footer(text="Data from ESPN & PropLine | Bet responsibly.")
     await interaction.followup.send(embed=embed)
