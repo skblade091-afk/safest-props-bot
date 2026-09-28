@@ -888,6 +888,62 @@ async def clearcache(interaction: discord.Interaction):
                 count += 1
     await interaction.followup.send(f"🗑️ Deleted {count} cached files.")
 
+@tree.command(name="rawdump", description="[Dev] Dump raw ESPN JSON structure")
+async def rawdump(interaction: discord.Interaction):
+    await interaction.response.defer()
+    import requests, json
+    
+    url = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/4036378/gamelog"
+    r = requests.get(url, timeout=10)
+    data = r.json()
+    
+    # Top-level keys
+    top_keys = list(data.keys())
+    
+    # First event's keys inside seasonTypes
+    first_event_keys = []
+    try:
+        first_event_keys = list(data['seasonTypes'][0]['categories'][0]['events'][0].keys())
+    except Exception as e:
+        first_event_keys = [f"error: {e}"]
+    
+    # Show the first event object (truncated)
+    first_event_sample = ""
+    try:
+        ev = data['seasonTypes'][0]['categories'][0]['events'][0]
+        first_event_sample = json.dumps(ev, indent=1)[:800]
+    except Exception as e:
+        first_event_sample = f"error: {e}"
+    
+    # Events dict info
+    events_dict = data.get('events', {})
+    events_info = f"type={type(events_dict).__name__}"
+    first_event_meta = ""
+    if isinstance(events_dict, dict) and events_dict:
+        first_key = list(events_dict.keys())[0]
+        events_info += f", len={len(events_dict)}, first key={first_key}"
+        first_event_meta = json.dumps(events_dict[first_key], indent=1)[:800]
+    elif isinstance(events_dict, list):
+        events_info += f", len={len(events_dict)}"
+        if events_dict:
+            first_event_meta = json.dumps(events_dict[0], indent=1)[:800]
+    
+    msg = (
+        f"**Top-level keys:** `{top_keys}`\n\n"
+        f"**First event keys (in seasonTypes):** `{first_event_keys}`\n\n"
+        f"**First event (seasonTypes):**\n```json\n{first_event_sample}\n```\n\n"
+        f"**Events dict:** {events_info}\n\n"
+        f"**First event metadata (events dict):**\n```json\n{first_event_meta}\n```"
+    )
+    
+    # Discord has 2000 char limit per message, so split if needed
+    if len(msg) > 1900:
+        await interaction.followup.send(msg[:1900])
+        if len(msg) > 1900:
+            await interaction.followup.send(msg[1900:3800])
+    else:
+        await interaction.followup.send(msg)
+
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
 async def debuglog(interaction: discord.Interaction, player: str):
