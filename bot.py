@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from espn_client import ESPNClient
 from odds_client import OddsClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tracker import save_prediction
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -530,7 +531,26 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
                 f"→ No live odds available\n"
                 f"Confidence: {conf_label} ({confidence:.0%})"
             )
-        
+
+                # --- Log this prediction ---
+        save_prediction(
+            sport=sport,
+            player_name=player_name,
+            team=player_info["team"],
+            opponent=opponent_team,
+            espn_id=player_info["espn_id"],
+            market_key=market["key"],
+            market_display=display_name,
+            stat_key=stat_key,
+            line=line_value,
+            line_price=closest_line['price'] if available_lines else None,
+            is_estimated=(not available_lines),
+            projection=avg_stat,
+            confidence=confidence,
+            recommendation=recommendation if available_lines else "SKIP",
+            edge=(avg_stat - line_value) if available_lines else 0,
+        )
+
         embed.add_field(name=display_name, value=field_value, inline=False)
     
     if len(embed.fields) == 0:
@@ -582,6 +602,27 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
         
         closest_line = min(available_lines, key=lambda x: abs(x['line'] - avg_stat))
         edge = avg_stat - closest_line['line']
+        recommendation = "OVER" if edge > 0 else "UNDER"
+        
+        # --- Log this prediction ---
+        from tracker import save_prediction
+        save_prediction(
+            sport=espn_league,
+            player_name=info["name"],
+            team=info["team"],
+            opponent=opponent_team,
+            espn_id=info["espn_id"],
+            market_key=primary_market["key"],
+            market_display=primary_market["display"],
+            stat_key=stat_key,
+            line=closest_line['line'],
+            line_price=closest_line['price'],
+            is_estimated=False,
+            projection=avg_stat,
+            confidence=confidence,
+            recommendation=recommendation,
+            edge=edge,
+        )
         
         return {
             "player": info["name"],
@@ -590,7 +631,7 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
             "line": closest_line['line'],
             "price": closest_line['price'],
             "edge": edge,
-            "recommendation": "OVER" if edge > 0 else "UNDER",
+            "recommendation": recommendation,
             "abs_edge": abs(edge),
             "confidence": confidence,
             "reason": prediction["adjustment_reason"]
