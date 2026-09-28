@@ -479,6 +479,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         # Import the predictor
     from predictor import compute_prediction, get_confidence_label
     
+    # Fetch the opponent once for this player
+    opponent_team = odds_client.get_opponent(player_info["team"], sport_key)
+    
     for market in player_info["markets"]:
         stat_key = market["stat"]
         display_name = market["display"]
@@ -486,10 +489,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         if stat_key not in data.columns:
             continue
         
-        # Use the smart predictor
         prediction = compute_prediction(
             data, stat_key, sport.lower(),
-            opponent_team=player_info["team"],  # we'll get opponent properly later
+            opponent_team=opponent_team,
             market_type=market["key"]
         )
         
@@ -555,10 +557,13 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
         if stat_key not in data.columns:
             return None
         
-        # Use smart predictor
+        # Find the actual opponent
+        opponent_team = odds_client.get_opponent(info["team"], sport_key)
+        
+        # Use smart predictor with real opponent
         prediction = compute_prediction(
             data, stat_key, espn_league,
-            opponent_team=info["team"],
+            opponent_team=opponent_team,
             market_type=primary_market["key"]
         )
         

@@ -11,8 +11,8 @@ HEADERS = {"X-API-Key": API_KEY}
 
 # --- Simple in-memory cache ---
 _cache = {}
-CACHE_TTL_EVENTS = 300   # 5 minutes for events list
-CACHE_TTL_ODDS = 60      # 1 minute for odds (moves fast)
+CACHE_TTL_EVENTS = 300
+CACHE_TTL_ODDS = 60
 
 def _cache_get(key):
     entry = _cache.get(key)
@@ -26,12 +26,10 @@ def _cache_set(key, data, ttl):
 
 class OddsClient:
     def _get_events(self, sport_key):
-        """Fetch and cache the full events list for a sport."""
         cache_key = f"events:{sport_key}"
         cached = _cache_get(cache_key)
         if cached is not None:
             return cached
-        
         events_url = f"{BASE_URL}/v1/sports/{sport_key}/events"
         try:
             r = requests.get(events_url, headers=HEADERS, timeout=10)
@@ -43,12 +41,10 @@ class OddsClient:
             return []
 
     def _get_event_odds(self, sport_key, event_id, market_key):
-        """Fetch and cache odds for a specific event + market."""
         cache_key = f"odds:{sport_key}:{event_id}:{market_key}"
         cached = _cache_get(cache_key)
         if cached is not None:
             return cached
-        
         odds_url = f"{BASE_URL}/v1/sports/{sport_key}/odds"
         params = {"event_id": event_id, "markets": market_key}
         try:
@@ -60,6 +56,24 @@ class OddsClient:
         except requests.RequestException:
             return []
 
+    def get_opponent(self, team_name: str, sport_key: str = "americanfootball_nfl") -> str:
+        """
+        Find the opponent team for a given team. Returns the opponent name,
+        or empty string if we can't determine it.
+        Example: get_opponent("Packers", "americanfootball_nfl") -> "ATL Falcons"
+        """
+        events = self._get_events(sport_key)
+        team_lower = team_name.lower()
+        
+        for event in events:
+            home = event.get('home_team', '')
+            away = event.get('away_team', '')
+            if team_lower in home.lower():
+                return away
+            if team_lower in away.lower():
+                return home
+        return ""
+
     def get_player_props(self, player_name: str, team_name: str, market_key: str = "player_pass_yds", sport_key: str = "americanfootball_nfl"):
         """Fetches available lines for a specific player and market (uses cache)."""
         all_lines = []
@@ -68,7 +82,6 @@ class OddsClient:
         if not events:
             return []
         
-        # Find the target event
         target_event_id = None
         for event in events:
             home = event.get('home_team', '')
