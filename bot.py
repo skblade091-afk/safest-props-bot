@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ext import tasks
 import os
 from dotenv import load_dotenv
 from espn_client import ESPNClient
@@ -364,16 +365,6 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
-# --- Bot events ---
-@client.event
-async def on_ready():
-    guild = discord.Object(id=GUILD_ID)
-    tree.copy_global_to(guild=guild)
-    await tree.sync(guild=guild)
-    print(f"✅ Logged in as {client.user}!")
-    print("✅ Slash commands synced to your server!")
-
-
 # --- Commands ---
 @tree.command(name="ping", description="Test if the bot is online")
 async def ping(interaction: discord.Interaction):
@@ -641,6 +632,39 @@ async def top(interaction: discord.Interaction, sport: str):
     
     embed.set_footer(text="Data from ESPN & PropLine | Bet responsibly.")
     await interaction.followup.send(embed=embed)
+
+
+# --- Background refresh task ---
+@tasks.loop(hours=6)
+async def refresh_player_data():
+    """Refresh all player gamelogs from ESPN every 6 hours."""
+    print("🔄 Starting background refresh of player gamelogs...")
+    espn = ESPNClient()
+    nfl_count = espn.refresh_all(PLAYERS, "football", "nfl", force=True)
+    nba_count = espn.refresh_all(NBA_PLAYERS, "basketball", "nba", force=True)
+    print(f"✅ Refreshed {nfl_count} NFL + {nba_count} NBA players.")
+
+
+@refresh_player_data.before_loop
+async def before_refresh():
+    """Wait until the bot is ready before starting the refresh loop."""
+    await client.wait_until_ready()
+
+
+@client.event
+async def on_ready():
+    """Runs once when the bot logs in."""
+    # Sync commands
+    guild = discord.Object(id=GUILD_ID)
+    tree.copy_global_to(guild=guild)
+    await tree.sync(guild=guild)
+    print(f"✅ Logged in as {client.user}!")
+    print("✅ Slash commands synced to your server!")
+    
+    # Start the background refresh loop (only once)
+    if not refresh_player_data.is_running():
+        refresh_player_data.start()
+        print("🔄 Background refresh task started (runs every 6 hours).")
 
 
 if __name__ == "__main__":
