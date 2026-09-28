@@ -509,8 +509,11 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
     player_name = player_info["name"]
     
     espn = ESPNClient()
-    data = espn.get_player_gamelog(espn_sport, espn_league, player_info["espn_id"], player_info["espn_stat_map"])
-    
+    data = espn.get_player_gamelog(
+        espn_sport, espn_league,
+        player_info["espn_id"], player_info["espn_stat_map"],
+        team_name=player_info["team"]
+    )
     if data is None or data.empty:
         await interaction.followup.send("❌ Could not fetch player data from ESPN.")
         return
@@ -626,8 +629,11 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
     from predictor import compute_prediction
     
     try:
-        data = espn.get_player_gamelog(espn_sport, espn_league, info["espn_id"], info["espn_stat_map"])
-        
+        data = espn.get_player_gamelog(
+            espn_sport, espn_league,
+            player_info["espn_id"], player_info["espn_stat_map"],
+            team_name=player_info["team"]
+        )
         if data is None or data.empty or len(data) < 2:
             return None
         

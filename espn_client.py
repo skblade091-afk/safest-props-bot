@@ -129,8 +129,11 @@ class ESPNClient:
             print(f"Cache load failed for {path}: {e}")
             return None
 
-    def get_player_gamelog(self, sport: str, league: str, athlete_id: int, stat_map: dict) -> Optional[pd.DataFrame]:
-        """Fetches a player's game-by-game log with persistent file cache."""
+    def get_player_gamelog(self, sport: str, league: str, athlete_id: int, stat_map: dict, team_name: str = "") -> Optional[pd.DataFrame]:
+        """
+        Fetches a player's game-by-game log with persistent file cache.
+        team_name: the player's team (e.g., "Packers"). Used to determine home/away.
+        """
         path = self._cache_path(sport, league, athlete_id)
 
         if self._is_fresh(path):
@@ -157,13 +160,14 @@ class ESPNClient:
                 if not events_list:
                     return None
 
-                # Get player's team name
-                player_team = ""
-                try:
-                    team_obj = data.get('athlete', {}).get('team', {})
-                    player_team = team_obj.get('name') or team_obj.get('displayName') or ""
-                except Exception:
-                    pass
+                # Prefer the passed-in team name; fall back to ESPN's metadata
+                player_team = team_name
+                if not player_team:
+                    try:
+                        team_obj = data.get('athlete', {}).get('team', {})
+                        player_team = team_obj.get('name') or team_obj.get('displayName') or ""
+                    except Exception:
+                        pass
 
                 rows = []
                 for event in events_list:
@@ -178,20 +182,20 @@ class ESPNClient:
 
                     game_date = meta.get('gameDate') or event.get('gameDate')
 
-                    # Default values
+                    # Defaults
                     home_away = "HOME"
                     opponent = None
 
-                    # Use the summary API to determine home/away and opponent
+                    # Use the game summary to get home/away + opponent
                     game_info = _get_game_info(sport, league, event_id)
                     if game_info and player_team:
-                        player_lower = player_team.lower()
-                        home_lower = game_info['home'].lower()
-                        away_lower = game_info['away'].lower()
-                        if player_lower in home_lower or home_lower in player_lower:
+                        p = player_team.lower()
+                        h = game_info['home'].lower()
+                        a = game_info['away'].lower()
+                        if p in h or h in p:
                             home_away = "HOME"
                             opponent = game_info['away']
-                        elif player_lower in away_lower or away_lower in player_lower:
+                        elif p in a or a in p:
                             home_away = "AWAY"
                             opponent = game_info['home']
 
@@ -227,27 +231,25 @@ class ESPNClient:
                     df = self._load(path)
                     return df if df is not None and not df.empty else None
 
-        # Hit a 404 — no retry, just return stale cache if any
         df = self._load(path)
         return df if df is not None and not df.empty else None
 
     def refresh_all(self, players_dict: dict, sport: str, league: str, force: bool = False) -> tuple:
-        """
-        Refresh all players' gamelogs one at a time with a small delay.
-        Returns (success_count, fail_count).
-        """
+        """Refresh all players' gamelogs one at a time with a small delay."""
         success = 0
         failed = 0
         for player_key, info in players_dict.items():
             try:
                 path = self._cache_path(sport, league, info["espn_id"])
                 if force or not self._is_fresh(path):
-                    result = self.get_player_gamelog(sport, league, info["espn_id"], info["espn_stat_map"])
+                    result = self.get_player_gamelog(
+                        sport, league, info["espn_id"], info["espn_stat_map"],
+                        team_name=info.get("team", "")
+                    )
                     if result is not None and not result.empty:
                         success += 1
                     else:
                         failed += 1
-                    # Be gentle with ESPN — 0.5s between requests
                     time.sleep(0.5)
             except Exception as e:
                 failed += 1
