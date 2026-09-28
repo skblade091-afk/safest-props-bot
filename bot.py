@@ -848,6 +848,20 @@ async def record(interaction: discord.Interaction, sport: str = None):
         value=str(total),
         inline=True
     )
+
+@tree.command(name="cleanrecord", description="[Dev] Delete all resolved predictions (fresh start)")
+async def cleanrecord(interaction: discord.Interaction):
+    await interaction.response.defer()
+    from tracker import _get_connection
+    conn = _get_connection()
+    try:
+        count = conn.execute(
+            "DELETE FROM predictions WHERE result != 'PENDING'"
+        ).rowcount
+        conn.commit()
+        await interaction.followup.send(f"🗑️ Deleted {count} resolved predictions. Fresh start.")
+    finally:
+        conn.close()
     
     # Confidence breakdown
     conf_lines = []
