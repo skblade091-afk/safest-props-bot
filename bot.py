@@ -874,6 +874,36 @@ async def cleanrecord(interaction: discord.Interaction):
         await interaction.followup.send(f"🗑️ Deleted {count} resolved predictions. Fresh start.")
     finally:
         conn.close()
+
+@tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
+@app_commands.describe(player="Player key like jordan_love")
+async def debuglog(interaction: discord.Interaction, player: str):
+    await interaction.response.defer()
+    from espn_client import ESPNClient
+    
+    player_key = player.lower()
+    if player_key not in PLAYERS:
+        await interaction.followup.send("Not found.")
+        return
+    
+    info = PLAYERS[player_key]
+    espn = ESPNClient()
+    data = espn.get_player_gamelog('football', 'nfl', info["espn_id"], info["espn_stat_map"])
+    
+    if data is None or data.empty:
+        await interaction.followup.send("No data.")
+        return
+    
+    # Show last 5 rows with the key columns
+    msg = "```\n"
+    for _, row in data.tail(5).iterrows():
+        msg += f"date={str(row.get('date'))[:10]} "
+        msg += f"ha={row.get('home_away', '?')} "
+        msg += f"opp={row.get('opponent', '?')} "
+        msg += f"stat={row.get(info['markets'][0]['stat'], '?')}\n"
+    msg += "```"
+    
+    await interaction.followup.send(msg)
     
     # Confidence breakdown
     conf_lines = []
