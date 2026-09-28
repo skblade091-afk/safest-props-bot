@@ -1005,13 +1005,16 @@ async def debuglog(interaction: discord.Interaction, player: str):
     
     info = PLAYERS[player_key]
     espn = ESPNClient()
-    data = espn.get_player_gamelog('football', 'nfl', info["espn_id"], info["espn_stat_map"])
+    data = espn.get_player_gamelog(
+        'football', 'nfl',
+        info["espn_id"], info["espn_stat_map"],
+        team_name=info["team"]
+    )
     
     if data is None or data.empty:
         await interaction.followup.send("No data.")
         return
     
-    # Show last 5 rows with the key columns
     msg = "```\n"
     for _, row in data.tail(5).iterrows():
         msg += f"date={str(row.get('date'))[:10]} "
