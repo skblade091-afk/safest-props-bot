@@ -476,6 +476,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         color=embed_color
     )
     
+        # Import the predictor
+    from predictor import compute_prediction, get_confidence_label
+    
     for market in player_info["markets"]:
         stat_key = market["stat"]
         display_name = market["display"]
@@ -483,11 +486,19 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         if stat_key not in data.columns:
             continue
         
-        recent_games = data[stat_key].tail(5)
-        avg_stat = recent_games.mean()
+        # Use the smart predictor
+        prediction = compute_prediction(
+            data, stat_key, sport.lower(),
+            opponent_team=player_info["team"],  # we'll get opponent properly later
+            market_type=market["key"]
+        )
         
-        if len(recent_games) < 3:
+        if prediction is None:
             continue
+        
+        avg_stat = prediction["adjusted_avg"]
+        confidence = prediction["confidence"]
+        conf_label = get_confidence_label(confidence)
         
         available_lines = odds_client.get_player_props(
             player_name, player_info["team"], market["key"], sport_key
@@ -500,15 +511,22 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
             recommendation = "OVER" if avg_stat > line_value else "UNDER"
             edge = abs(avg_stat - line_value)
             
+            # Calculate edge as % of line (better metric than raw edge)
+            edge_pct = (edge / line_value * 100) if line_value else 0
+            
+            reason_line = f"\n_{prediction['adjustment_reason']}_" if prediction['adjustment_reason'] else ""
+            
             field_value = (
-                f"Avg: **{avg_stat:.1f}** | Line: **{line_value}** | Odds: **{odds_display}**\n"
-                f"→ **{recommendation}** (Edge: {edge:.1f})"
+                f"Projected: **{avg_stat:.1f}** | Line: **{line_value}** | Odds: **{odds_display}**\n"
+                f"→ **{recommendation}** (Edge: {edge:+.1f}, {edge_pct:.1f}%){reason_line}\n"
+                f"Confidence: {conf_label} ({confidence:.0%})"
             )
         else:
             line_value = round(avg_stat * 2) / 2
             field_value = (
-                f"Avg: **{avg_stat:.1f}** | Line: **{line_value}** *(estimated)*\n"
-                f"→ No live odds available"
+                f"Projected: **{avg_stat:.1f}** | Line: **{line_value}** *(estimated)*\n"
+                f"→ No live odds available\n"
+                f"Confidence: {conf_label} ({confidence:.0%})"
             )
         
         embed.add_field(name=display_name, value=field_value, inline=False)
@@ -522,7 +540,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
 
 
 def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn_sport, espn_league):
-    """Helper that processes one player. Runs in a thread pool for speed."""
+    """Helper that processes one player with smart prediction."""
+    from predictor import compute_prediction
+    
     try:
         data = espn.get_player_gamelog(espn_sport, espn_league, info["espn_id"], info["espn_stat_map"])
         
@@ -535,8 +555,18 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
         if stat_key not in data.columns:
             return None
         
-        recent_games = data[stat_key].tail(5)
-        avg_stat = recent_games.mean()
+        # Use smart predictor
+        prediction = compute_prediction(
+            data, stat_key, espn_league,
+            opponent_team=info["team"],
+            market_type=primary_market["key"]
+        )
+        
+        if prediction is None:
+            return None
+        
+        avg_stat = prediction["adjusted_avg"]
+        confidence = prediction["confidence"]
         
         available_lines = odds_client.get_player_props(
             info["name"], info["team"], primary_market["key"], sport_key
@@ -556,7 +586,9 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
             "price": closest_line['price'],
             "edge": edge,
             "recommendation": "OVER" if edge > 0 else "UNDER",
-            "abs_edge": abs(edge)
+            "abs_edge": abs(edge),
+            "confidence": confidence,
+            "reason": prediction["adjustment_reason"]
         }
     except Exception as e:
         print(f"Error processing {info['name']}: {e}")
@@ -621,12 +653,19 @@ async def top(interaction: discord.Interaction, sport: str):
         color=0xffd700
     )
     
+    from predictor import get_confidence_label
+    
     for i, pick in enumerate(top_picks, 1):
         color_emoji = "🟢" if pick["recommendation"] == "OVER" else "🔴"
         field_name = f"{color_emoji} #{i} {pick['player']} — {pick['market']}"
+        
+        conf_label = get_confidence_label(pick["confidence"])
+        reason_line = f"\n_{pick['reason']}_" if pick.get('reason') else ""
+        
         field_value = (
-            f"Avg: **{pick['avg']:.1f}** vs Line: **{pick['line']}+** | Odds: **{pick['price']}**\n"
-            f"→ **{pick['recommendation']}** (Edge: {pick['edge']:+.1f})"
+            f"Projected: **{pick['avg']:.1f}** vs Line: **{pick['line']}+** | Odds: **{pick['price']}**\n"
+            f"→ **{pick['recommendation']}** (Edge: {pick['edge']:+.1f}){reason_line}\n"
+            f"Confidence: {conf_label} ({pick['confidence']:.0%})"
         )
         embed.add_field(name=field_name, value=field_value, inline=False)
     
