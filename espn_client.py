@@ -18,51 +18,51 @@ os.makedirs(DATA_DIR, exist_ok=True)
 REFRESH_INTERVAL = 6 * 60 * 60
 
 
-# --- Scoreboard cache: maps YYYYMMDD -> {gameId: {home: str, away: str}} ---
-_scoreboard_cache = {}
+# --- Game info cache: per-game home/away lookup ---
+_game_info_cache = {}
+GAME_INFO_CACHE_TTL = 24 * 60 * 60  # 24 hours
 
 
-def _get_scoreboard(sport: str, league: str, date_str: str) -> dict:
+def _get_game_info(sport: str, league: str, game_id: str) -> dict:
     """
-    Fetch ESPN scoreboard for a specific date (YYYYMMDD).
-    Returns dict keyed by gameId with home/away team names.
-    Cached per (sport, league, date).
+    Fetch ESPN game summary and extract home/away teams.
+    Returns {'home': 'team name', 'away': 'team name'} or {}.
     """
-    cache_key = f"{sport}:{league}:{date_str}"
-    if cache_key in _scoreboard_cache:
-        return _scoreboard_cache[cache_key]
+    cache_key = f"{sport}:{league}:{game_id}"
+    cached = _game_info_cache.get(cache_key)
+    if cached and (time.time() - cached['time']) < GAME_INFO_CACHE_TTL:
+        return cached['data']
 
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?dates={date_str}"
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/summary?event={game_id}"
     result = {}
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             data = r.json()
-            for event in data.get('events', []):
-                game_id = str(event.get('id', ''))
-                competitions = event.get('competitions', [])
-                if competitions:
-                    comp = competitions[0]
-                    home_team = None
-                    away_team = None
-                    for competitor in comp.get('competitors', []):
-                        team_info = competitor.get('team', {})
-                        team_name = team_info.get('name') or team_info.get('displayName', '')
-                        location = (competitor.get('homeAway') or '').lower()
-                        if location == 'home':
-                            home_team = team_name
-                        elif location == 'away':
-                            away_team = team_name
-                    if home_team and away_team:
-                        result[game_id] = {'home': home_team, 'away': away_team}
+            header = data.get('header', {})
+            competitions = header.get('competitions', [])
+            if competitions:
+                comp = competitions[0]
+                home_team = None
+                away_team = None
+                for competitor in comp.get('competitors', []):
+                    team_info = competitor.get('team', {})
+                    team_name = team_info.get('displayName') or team_info.get('name', '')
+                    location = (competitor.get('homeAway') or '').lower()
+                    if location == 'home':
+                        home_team = team_name
+                    elif location == 'away':
+                        away_team = team_name
+                if home_team and away_team:
+                    result = {'home': home_team, 'away': away_team}
     except requests.RequestException:
         pass
 
-    _scoreboard_cache[cache_key] = result
+    _game_info_cache[cache_key] = {'data': result, 'time': time.time()}
     return result
 
 
-# --- Injury status cache: {cache_key: {status, time}} ---
+# --- Injury status cache ---
 _injury_cache = {}
 INJURY_CACHE_TTL = 1800  # 30 minutes
 
@@ -71,7 +71,6 @@ def get_injury_status(sport: str, league: str, athlete_id: int) -> Optional[str]
     """
     Fetches the injury status for a player from ESPN's injury report.
     Returns a string like 'OUT', 'QUESTIONABLE', 'DAY-TO-DAY', or None.
-    Caches results for 30 minutes.
     """
     cache_key = f"{sport}:{league}:{athlete_id}"
     cached = _injury_cache.get(cache_key)
@@ -158,7 +157,7 @@ class ESPNClient:
                 if not events_list:
                     return None
 
-                # Get player's team name (to match against scoreboard)
+                # Get player's team name
                 player_team = ""
                 try:
                     team_obj = data.get('athlete', {}).get('team', {})
@@ -183,21 +182,18 @@ class ESPNClient:
                     home_away = "HOME"
                     opponent = None
 
-                    # Look up the game in the scoreboard by date
-                    if game_date and len(game_date) >= 10 and player_team:
-                        date_str = game_date[:10].replace('-', '')  # YYYYMMDD
-                        scoreboard = _get_scoreboard(sport, league, date_str)
-                        game_info = scoreboard.get(event_id, {})
-                        if game_info:
-                            player_team_lower = player_team.lower()
-                            home_lower = game_info['home'].lower()
-                            away_lower = game_info['away'].lower()
-                            if player_team_lower in home_lower or home_lower in player_team_lower:
-                                home_away = "HOME"
-                                opponent = game_info['away']
-                            elif player_team_lower in away_lower or away_lower in player_team_lower:
-                                home_away = "AWAY"
-                                opponent = game_info['home']
+                    # Use the summary API to determine home/away and opponent
+                    game_info = _get_game_info(sport, league, event_id)
+                    if game_info and player_team:
+                        player_lower = player_team.lower()
+                        home_lower = game_info['home'].lower()
+                        away_lower = game_info['away'].lower()
+                        if player_lower in home_lower or home_lower in player_lower:
+                            home_away = "HOME"
+                            opponent = game_info['away']
+                        elif player_lower in away_lower or away_lower in player_lower:
+                            home_away = "AWAY"
+                            opponent = game_info['home']
 
                     row = {
                         'game_id': event_id,
