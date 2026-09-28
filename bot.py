@@ -8,6 +8,8 @@ from espn_client import ESPNClient
 from odds_client import OddsClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tracker import save_prediction
+from checker import check_pending_predictions
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -383,6 +385,44 @@ async def dbcount(interaction: discord.Interaction):
     finally:
         conn.close()
 
+@tree.command(name="checkresults", description="[Dev] Manually check pending predictions for results")
+async def checkresults(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    # Use grace_hours=0 for manual test — check immediately
+    resolved, pending, errors = check_pending_predictions(PLAYERS, NBA_PLAYERS, grace_hours=0)
+    
+    await interaction.followup.send(
+        f"🔍 **Check complete**\n"
+        f"✅ Resolved: **{resolved}**\n"
+        f"⏳ Still pending: **{pending}**\n"
+        f"❌ Errors: **{errors}**"
+    )
+
+@tree.command(name="testresolve", description="[Dev] Force-resolve one pending prediction with a fake value")
+async def testresolve(interaction: discord.Interaction):
+    await interaction.response.defer()
+    from tracker import get_pending_predictions, resolve_prediction
+    
+    pending = get_pending_predictions()
+    if not pending:
+        await interaction.followup.send("No pending predictions to resolve.")
+        return
+    
+    pred = pending[0]
+    # Simulate: actual value = line + 5 (should produce OVER win if recommendation is OVER)
+    fake_actual = pred["line"] + 5
+    result = resolve_prediction(pred["id"], fake_actual)
+    
+    await interaction.followup.send(
+        f"🧪 **Test Resolve**\n"
+        f"Player: {pred['player_name']}\n"
+        f"Market: {pred['market_display']}\n"
+        f"Line: {pred['line']} | Recommendation: {pred['recommendation']}\n"
+        f"Fake actual: {fake_actual}\n"
+        f"Result: **{result}**"
+    )
+    
 @tree.command(name="roster", description="List all available players, optionally filtered by sport")
 @app_commands.describe(sport="Optional: filter to just one sport")
 @app_commands.choices(sport=[
@@ -750,18 +790,38 @@ async def before_refresh():
 @client.event
 async def on_ready():
     """Runs once when the bot logs in."""
-    # Sync commands
     guild = discord.Object(id=GUILD_ID)
     tree.copy_global_to(guild=guild)
     await tree.sync(guild=guild)
     print(f"✅ Logged in as {client.user}!")
     print("✅ Slash commands synced to your server!")
     
-    # Start the background refresh loop (only once)
     if not refresh_player_data.is_running():
         refresh_player_data.start()
         print("🔄 Background refresh task started (runs every 6 hours).")
+    
+    if not check_results.is_running():
+        check_results.start()
+        print("🔍 Background result checker started (runs every 1 hour).")
+
+# --- Background result checker task ---
+@tasks.loop(hours=1)
+async def check_results():
+    """Every hour, try to resolve any pending predictions."""
+    print("🔍 Checking pending predictions for results...")
+    try:
+        resolved, pending, errors = check_pending_predictions(PLAYERS, NBA_PLAYERS)
+        print(f"✅ Checked: {resolved} resolved, {pending} still pending, {errors} errors")
+    except Exception as e:
+        print(f"❌ Checker failed: {e}")
 
 
+@check_results.before_loop
+async def before_check():
+    """Wait 5 minutes after startup before the first check."""
+    await client.wait_until_ready()
+    await asyncio.sleep(300)
+
+    
 if __name__ == "__main__":
     client.run(TOKEN)
