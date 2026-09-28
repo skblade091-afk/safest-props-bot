@@ -405,8 +405,10 @@ async def testresolve(interaction: discord.Interaction):
     from tracker import get_pending_predictions, resolve_prediction
     
     pending = get_pending_predictions()
+    # Filter out SKIP predictions
+    pending = [p for p in pending if p["recommendation"] != "SKIP"]
     if not pending:
-        await interaction.followup.send("No pending predictions to resolve.")
+        await interaction.followup.send("No resolvable predictions (SKIPs excluded).")
         return
     
     pred = pending[0]
@@ -422,7 +424,7 @@ async def testresolve(interaction: discord.Interaction):
         f"Fake actual: {fake_actual}\n"
         f"Result: **{result}**"
     )
-    
+
 @tree.command(name="roster", description="List all available players, optionally filtered by sport")
 @app_commands.describe(sport="Optional: filter to just one sport")
 @app_commands.choices(sport=[

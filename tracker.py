@@ -134,9 +134,19 @@ def resolve_prediction(prediction_id, actual_value):
         if not row:
             return None
         
+        # Skip resolving SKIP predictions — they don't count
+        if row["recommendation"] == "SKIP":
+            conn.execute("""
+                UPDATE predictions
+                SET result = 'SKIP', resolved_at = ?
+                WHERE id = ?
+            """, (datetime.utcnow().isoformat(), prediction_id))
+            conn.commit()
+            return "SKIP"
+
         line = row["line"]
         recommendation = row["recommendation"]
-        
+
         # Determine result — small tolerance for floating point
         if abs(actual_value - line) < 0.01:
             result = "PUSH"
@@ -144,7 +154,7 @@ def resolve_prediction(prediction_id, actual_value):
             result = "WIN" if actual_value > line else "LOSS"
         else:  # UNDER
             result = "WIN" if actual_value < line else "LOSS"
-        
+
         conn.execute("""
             UPDATE predictions
             SET actual_value = ?, result = ?, resolved_at = ?
