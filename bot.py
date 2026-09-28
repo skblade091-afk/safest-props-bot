@@ -533,15 +533,17 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         color=embed_color
     )
     
-        # Import the predictor
+    # Import the predictor
     from predictor import compute_prediction, get_confidence_label
     
-        # Fetch the opponent and determine home/away
-    opponent_team = odds_client.get_opponent(player_info["team"], sport_key)
-    is_home = odds_client.is_home_game(player_info["team"], sport_key)
+    # Get the upcoming game from ESPN (more reliable than PropLine)
+    from espn_client import get_injury_status, get_upcoming_game
+    upcoming = get_upcoming_game(espn_sport, espn_league, player_info["team"])
+    opponent_team = upcoming.get('opponent', '') or odds_client.get_opponent(player_info["team"], sport_key)
+    is_home = upcoming.get('is_home')
+    if is_home is None:
+        is_home = odds_client.is_home_game(player_info["team"], sport_key)
     
-    # Check injury status from ESPN
-    from espn_client import get_injury_status
     injury_status = get_injury_status(espn_sport, espn_league, player_info["espn_id"])
     
     for market in player_info["markets"]:
@@ -643,11 +645,14 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
         if stat_key not in data.columns:
             return None
 
-        # Find the actual opponent and venue
-        opponent_team = odds_client.get_opponent(info["team"], sport_key)
-        is_home = odds_client.is_home_game(info["team"], sport_key)
-
-        from espn_client import get_injury_status
+        # Get upcoming game from ESPN
+        from espn_client import get_injury_status, get_upcoming_game
+        upcoming = get_upcoming_game(espn_sport, espn_league, info["team"])
+        opponent_team = upcoming.get('opponent', '') or odds_client.get_opponent(info["team"], sport_key)
+        is_home = upcoming.get('is_home')
+        if is_home is None:
+            is_home = odds_client.is_home_game(info["team"], sport_key)
+        
         injury_status = get_injury_status(espn_sport, espn_league, info["espn_id"])
 
         prediction = compute_prediction(

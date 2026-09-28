@@ -4,6 +4,7 @@ import os
 import json
 import time
 from typing import Optional
+from datetime import datetime, timedelta
 
 # Persistent storage location (Railway volume)
 DATA_DIR = "/data/gamelogs"
@@ -59,6 +60,61 @@ def _get_game_info(sport: str, league: str, game_id: str) -> dict:
         pass
 
     _game_info_cache[cache_key] = {'data': result, 'time': time.time()}
+    return result
+
+
+# --- Upcoming game lookup ---
+_upcoming_cache = {}
+UPCOMING_CACHE_TTL = 6 * 60 * 60  # 6 hours
+
+
+def get_upcoming_game(sport: str, league: str, team_name: str) -> dict:
+    """
+    Find the upcoming game for a team using ESPN's scoreboard.
+    Looks 14 days ahead. Returns {'opponent': str, 'is_home': bool} or {}.
+    """
+    cache_key = f"{sport}:{league}:{team_name}"
+    cached = _upcoming_cache.get(cache_key)
+    if cached and (time.time() - cached['time']) < UPCOMING_CACHE_TTL:
+        return cached['data']
+
+    today = datetime.utcnow()
+    end = today + timedelta(days=14)
+    date_range = f"{today.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
+
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?dates={date_range}"
+    result = {}
+
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            team_lower = team_name.lower()
+            for event in data.get('events', []):
+                comps = event.get('competitions', [])
+                if not comps:
+                    continue
+                competitors = comps[0].get('competitors', [])
+                for c in competitors:
+                    team_info = c.get('team', {})
+                    name = (team_info.get('name') or '').lower()
+                    display = (team_info.get('displayName') or '').lower()
+                    if team_lower in name or team_lower in display or (name and name in team_lower):
+                        is_home = (c.get('homeAway') or '').lower() == 'home'
+                        opponent = None
+                        for other in competitors:
+                            if other.get('id') != c.get('id'):
+                                opp = other.get('team', {})
+                                opponent = opp.get('displayName') or opp.get('name', '')
+                                break
+                        result = {'opponent': opponent or '', 'is_home': is_home}
+                        break
+                if result:
+                    break
+    except requests.RequestException:
+        pass
+
+    _upcoming_cache[cache_key] = {'data': result, 'time': time.time()}
     return result
 
 
