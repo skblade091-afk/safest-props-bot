@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 from espn_client import ESPNClient
 from odds_client import OddsClient
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -529,6 +530,48 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
     await interaction.followup.send(embed=embed)
 
 
+def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn_sport, espn_league):
+    """Helper that processes one player. Runs in a thread pool for speed."""
+    try:
+        data = espn.get_player_gamelog(espn_sport, espn_league, info["espn_id"], info["espn_stat_map"])
+        
+        if data is None or data.empty or len(data) < 2:
+            return None
+        
+        primary_market = info["markets"][0]
+        stat_key = primary_market["stat"]
+        
+        if stat_key not in data.columns:
+            return None
+        
+        recent_games = data[stat_key].tail(5)
+        avg_stat = recent_games.mean()
+        
+        available_lines = odds_client.get_player_props(
+            info["name"], info["team"], primary_market["key"], sport_key
+        )
+        
+        if not available_lines:
+            return None
+        
+        closest_line = min(available_lines, key=lambda x: abs(x['line'] - avg_stat))
+        edge = avg_stat - closest_line['line']
+        
+        return {
+            "player": info["name"],
+            "market": primary_market["display"],
+            "avg": avg_stat,
+            "line": closest_line['line'],
+            "price": closest_line['price'],
+            "edge": edge,
+            "recommendation": "OVER" if edge > 0 else "UNDER",
+            "abs_edge": abs(edge)
+        }
+    except Exception as e:
+        print(f"Error processing {info['name']}: {e}")
+        return None
+
+
 @tree.command(name="top", description="Scan all players and show today's top prop picks")
 @app_commands.describe(sport="Which sport to scan")
 @app_commands.choices(sport=[
@@ -551,58 +594,26 @@ async def top(interaction: discord.Interaction, sport: str):
         espn_league = "nba"
         league_label = "NBA"
     
-    await interaction.followup.send(f"🔍 Scanning all {league_label} players... This may take 30 seconds.")
+    await interaction.followup.send(f"🔍 Scanning {len(roster)} {league_label} players in parallel...")
     
     espn = ESPNClient()
     odds_client = OddsClient()
     results = []
     
-    for player_key, info in roster.items():
-        player_name = info["name"]
-        
-        try:
-            data = espn.get_player_gamelog(espn_sport, espn_league, info["espn_id"], info["espn_stat_map"])
-            
-            if data is None or data.empty or len(data) < 2:
-                continue
-            
-            primary_market = info["markets"][0]
-            stat_key = primary_market["stat"]
-            display_name = primary_market["display"]
-            
-            if stat_key not in data.columns:
-                continue
-            
-            recent_games = data[stat_key].tail(5)
-            avg_stat = recent_games.mean()
-            
-            available_lines = odds_client.get_player_props(
-                player_name, info["team"], primary_market["key"], sport_key
+    # Run 10 players at a time in parallel
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [
+            executor.submit(
+                _process_player_for_top,
+                k, v, espn, odds_client, sport_key, espn_sport, espn_league
             )
-            
-            if not available_lines:
-                continue
-            
-            closest_line = min(available_lines, key=lambda x: abs(x['line'] - avg_stat))
-            line_value = closest_line['line']
-            price = closest_line['price']
-            
-            edge = avg_stat - line_value
-            recommendation = "OVER" if edge > 0 else "UNDER"
-            
-            results.append({
-                "player": player_name,
-                "market": display_name,
-                "avg": avg_stat,
-                "line": line_value,
-                "price": price,
-                "edge": edge,
-                "recommendation": recommendation,
-                "abs_edge": abs(edge)
-            })
-        except Exception as e:
-            print(f"Error processing {player_name}: {e}")
-            continue
+            for k, v in roster.items()
+        ]
+        
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                results.append(result)
     
     if not results:
         await interaction.followup.send(
