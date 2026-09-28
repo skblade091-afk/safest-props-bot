@@ -572,6 +572,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
             player_name, player_info["team"], market["key"], sport_key
         )
         
+        # Build the reason line once, used in both branches
+        reason_line = f"\n_{prediction['adjustment_reason']}_" if prediction['adjustment_reason'] else ""
+        
         if available_lines:
             closest_line = min(available_lines, key=lambda x: abs(x['line'] - avg_stat))
             line_value = closest_line['line']
@@ -579,10 +582,7 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
             recommendation = "OVER" if avg_stat > line_value else "UNDER"
             edge = abs(avg_stat - line_value)
             
-            # Calculate edge as % of line (better metric than raw edge)
             edge_pct = (edge / line_value * 100) if line_value else 0
-            
-            reason_line = f"\n_{prediction['adjustment_reason']}_" if prediction['adjustment_reason'] else ""
             
             field_value = (
                 f"Projected: **{avg_stat:.1f}** | Line: **{line_value}** | Odds: **{odds_display}**\n"
@@ -592,11 +592,11 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         else:
             line_value = round(avg_stat * 2) / 2
             field_value = (
-                f"Projected: **{avg_stat:.1f}** | Line: **{line_value}** *(estimated)*\n"
+                f"Projected: **{avg_stat:.1f}** | Line: **{line_value}** *(estimated)*{reason_line}\n"
                 f"→ No live odds available\n"
                 f"Confidence: {conf_label} ({confidence:.0%})"
             )
-
+        
                 # --- Log this prediction ---
         save_prediction(
             sport=sport,
