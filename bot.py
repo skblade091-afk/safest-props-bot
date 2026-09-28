@@ -947,11 +947,44 @@ async def rawdump(interaction: discord.Interaction):
 @tree.command(name="gameinfo", description="[Dev] Test game summary lookup")
 async def gameinfo(interaction: discord.Interaction, game_id: str):
     await interaction.response.defer()
-    import requests
+    import requests, json
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={game_id}"
     r = requests.get(url, timeout=10)
     data = r.json()
-    await interaction.followup.send(f"Status: {r.status_code}\nTop keys: {list(data.keys())[:10]}")
+    
+    all_keys = list(data.keys())
+    
+    # Check if header exists and what's in it
+    header_info = "no header"
+    if 'header' in data:
+        header = data['header']
+        comps = header.get('competitions', [])
+        if comps:
+            competitors = comps[0].get('competitors', [])
+            teams = []
+            for c in competitors:
+                team = c.get('team', {})
+                teams.append(f"{c.get('homeAway')}: {team.get('displayName') or team.get('name')}")
+            header_info = " | ".join(teams)
+        else:
+            header_info = f"header exists but no competitions. keys: {list(header.keys())}"
+    
+    # Also check gameInfo
+    game_info_info = "no gameInfo"
+    if 'gameInfo' in data:
+        gi = data['gameInfo']
+        game_info_info = f"keys={list(gi.keys())[:8]}"
+        # Try to find venue / teams
+        if 'venue' in gi:
+            game_info_info += f" | venue={gi['venue'].get('fullName', '?')}"
+    
+    msg = (
+        f"**All top keys:** `{all_keys}`\n\n"
+        f"**Header:** {header_info}\n\n"
+        f"**gameInfo:** {game_info_info}"
+    )
+    
+    await interaction.followup.send(msg[:1900])
 
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
