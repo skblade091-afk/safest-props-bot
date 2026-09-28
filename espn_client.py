@@ -62,44 +62,67 @@ class ESPNClient:
 
         url = f"{self.BASE_URL}/{sport}/{league}/athletes/{athlete_id}/gamelog"
 
-        # Try up to 2 times with a delay between attempts
         for attempt in range(2):
             try:
                 response = requests.get(url, timeout=10)
                 if response.status_code == 404:
-                    # Player likely hasn't played — don't retry
                     break
                 response.raise_for_status()
                 data = response.json()
 
-                events = data.get('seasonTypes', [{}])[0].get('categories', [{}])[0].get('events', [])
-                if not events:
+                events_list = data.get('seasonTypes', [{}])[0].get('categories', [{}])[0].get('events', [])
+                events_meta = data.get('events', {})  # top-level metadata dict keyed by eventId
+
+                if not events_list:
                     return None
 
+                # Get player's own team id (to determine home/away)
+                player_team_id = None
+                try:
+                    player_team_id = str(data.get('athlete', {}).get('team', {}).get('id', ''))
+                except Exception:
+                    pass
+
                 rows = []
-                for event in events:
+                for event in events_list:
+                    event_id = str(event.get('eventId', ''))
                     stats = event.get('stats', [])
 
-                    # Determine home/away from the event object
-                    home_away = "HOME"
-                    try:
-                        if event.get('homeAway'):
-                            home_away = event.get('homeAway').upper()
-                        elif event.get('atVs'):
-                            home_away = "AWAY" if event.get('atVs') == 'at' else "HOME"
-                        else:
-                            home_team_id = event.get('homeTeamId') or event.get('homeTeam', {}).get('id')
-                            player_team_id = event.get('team', {}).get('id')
-                            if home_team_id and player_team_id:
-                                home_away = "HOME" if str(home_team_id) == str(player_team_id) else "AWAY"
-                    except Exception:
-                        pass
+                    # Look up metadata from the top-level events dict
+                    meta = events_meta.get(event_id, {})
+                    if not meta:
+                        # Try string/int variants
+                        meta = events_meta.get(int(event_id)) if event_id.isdigit() else {}
+                        if isinstance(meta, dict) and 'gameDate' not in meta:
+                            meta = {}
+
+                    game_date = meta.get('gameDate') or event.get('gameDate')
+                    opponent = None
+                    home_away = None
+
+                    # Determine opponent and home/away from meta
+                    home_team_id = str(meta.get('homeTeamId', ''))
+                    away_team_id = str(meta.get('awayTeamId', ''))
+
+                    if home_team_id and away_team_id and player_team_id:
+                        if home_team_id == player_team_id:
+                            home_away = "HOME"
+                            opponent = meta.get('awayTeamAbbreviation') or away_team_id
+                        elif away_team_id == player_team_id:
+                            home_away = "AWAY"
+                            opponent = meta.get('homeTeamAbbreviation') or home_team_id
+
+                    # Fallback: opponent info stored inside the event (some seasons)
+                    if not opponent:
+                        opp_obj = event.get('opponent', {})
+                        if opp_obj:
+                            opponent = opp_obj.get('abbreviation') or opp_obj.get('displayName')
 
                     row = {
-                        'game_id': event.get('eventId'),
-                        'date': event.get('gameDate'),
-                        'opponent': event.get('opponent', {}).get('abbreviation'),
-                        'home_away': home_away,
+                        'game_id': event_id,
+                        'date': game_date,
+                        'opponent': opponent,
+                        'home_away': home_away if home_away else "HOME",
                     }
 
                     for stat_name, stat_index in stat_map.items():
@@ -127,7 +150,6 @@ class ESPNClient:
                     df = self._load(path)
                     return df if df is not None and not df.empty else None
 
-        # Hit a 404 — no retry, just return stale cache if any
         df = self._load(path)
         return df if df is not None and not df.empty else None
 

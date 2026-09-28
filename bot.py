@@ -875,6 +875,19 @@ async def cleanrecord(interaction: discord.Interaction):
     finally:
         conn.close()
 
+@tree.command(name="clearcache", description="[Dev] Delete all cached gamelogs")
+async def clearcache(interaction: discord.Interaction):
+    await interaction.response.defer()
+    import os
+    from espn_client import DATA_DIR
+    count = 0
+    if os.path.exists(DATA_DIR):
+        for f in os.listdir(DATA_DIR):
+            if f.endswith('.json'):
+                os.remove(os.path.join(DATA_DIR, f))
+                count += 1
+    await interaction.followup.send(f"🗑️ Deleted {count} cached files.")
+
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
 async def debuglog(interaction: discord.Interaction, player: str):
