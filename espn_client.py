@@ -38,6 +38,8 @@ class ESPNClient:
             print(f"Cache save failed for {path}: {e}")
 
     def _load(self, path: str) -> Optional[pd.DataFrame]:
+        if not os.path.exists(path):
+            return None
         try:
             with open(path, 'r') as f:
                 records = json.load(f)
@@ -47,13 +49,9 @@ class ESPNClient:
             return None
 
     def get_player_gamelog(self, sport: str, league: str, athlete_id: int, stat_map: dict) -> Optional[pd.DataFrame]:
-        """
-        Fetches a player's game-by-game log. Uses persistent file cache when fresh.
-        Only hits ESPN once every 6 hours per player.
-        """
+        """Fetches a player's game-by-game log with persistent file cache."""
         path = self._cache_path(sport, league, athlete_id)
-
-        # If cached file is fresh, load it
+        
         if self._is_fresh(path):
             df = self._load(path)
             if df is not None and not df.empty:
@@ -61,48 +59,59 @@ class ESPNClient:
                 available = [c for c in needed_cols if c in df.columns]
                 if available:
                     return df
-
-        # Otherwise, fetch fresh from ESPN
+        
         url = f"{self.BASE_URL}/{sport}/{league}/athletes/{athlete_id}/gamelog"
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-
-            events = data.get('seasonTypes', [{}])[0].get('categories', [{}])[0].get('events', [])
-            if not events:
-                return None
-
-            rows = []
-            for event in events:
-                stats = event.get('stats', [])
-                row = {
-                    'game_id': event.get('eventId'),
-                    'date': event.get('gameDate'),
-                    'opponent': event.get('opponent', {}).get('abbreviation'),
-                }
-                for stat_name, stat_index in stat_map.items():
-                    try:
-                        if stat_index < len(stats) and stats[stat_index]:
-                            val = stats[stat_index]
-                            # Handle "8-18" style values (made-attempted) by taking the made number
-                            if isinstance(val, str) and '-' in val:
-                                val = val.split('-')[0]
-                            row[stat_name] = float(val)
-                        else:
+        
+        # Try up to 2 times with a delay between attempts
+        for attempt in range(2):
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 404:
+                    # Player likely hasn't played — don't retry
+                    break
+                response.raise_for_status()
+                data = response.json()
+                
+                events = data.get('seasonTypes', [{}])[0].get('categories', [{}])[0].get('events', [])
+                if not events:
+                    return None
+                
+                rows = []
+                for event in events:
+                    stats = event.get('stats', [])
+                    row = {
+                        'game_id': event.get('eventId'),
+                        'date': event.get('gameDate'),
+                        'opponent': event.get('opponent', {}).get('abbreviation'),
+                    }
+                    for stat_name, stat_index in stat_map.items():
+                        try:
+                            if stat_index < len(stats) and stats[stat_index]:
+                                val = stats[stat_index]
+                                if isinstance(val, str) and '-' in val:
+                                    val = val.split('-')[0]
+                                row[stat_name] = float(val)
+                            else:
+                                row[stat_name] = 0
+                        except (ValueError, IndexError):
                             row[stat_name] = 0
-                    except (ValueError, IndexError):
-                        row[stat_name] = 0
-                rows.append(row)
-
-            df = pd.DataFrame(rows)
-            self._save(path, df)
-            return df
-        except requests.RequestException as e:
-            print(f"Error fetching gamelog for {athlete_id}: {e}")
-            # If we have stale cache, use it as a fallback
-            df = self._load(path)
-            return df if df is not None and not df.empty else None
+                    rows.append(row)
+                
+                df = pd.DataFrame(rows)
+                self._save(path, df)
+                return df
+            except requests.RequestException:
+                if attempt == 0:
+                    time.sleep(2)  # Wait 2 seconds before retry
+                    continue
+                else:
+                    # Both attempts failed — try stale cache
+                    df = self._load(path)
+                    return df if df is not None and not df.empty else None
+        
+        # Hit a 404 — no retry, just return stale cache if any
+        df = self._load(path)
+        return df if df is not None and not df.empty else None
 
     def refresh_all(self, players_dict: dict, sport: str, league: str, force: bool = False) -> tuple:
         """
