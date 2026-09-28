@@ -944,6 +944,15 @@ async def rawdump(interaction: discord.Interaction):
     else:
         await interaction.followup.send(msg)
 
+@tree.command(name="gameinfo", description="[Dev] Test game summary lookup")
+async def gameinfo(interaction: discord.Interaction, game_id: str):
+    await interaction.response.defer()
+    import requests
+    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={game_id}"
+    r = requests.get(url, timeout=10)
+    data = r.json()
+    await interaction.followup.send(f"Status: {r.status_code}\nTop keys: {list(data.keys())[:10]}")
+
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
 async def debuglog(interaction: discord.Interaction, player: str):
