@@ -533,8 +533,13 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         # Import the predictor
     from predictor import compute_prediction, get_confidence_label
     
-    # Fetch the opponent once for this player
+        # Fetch the opponent and determine home/away
     opponent_team = odds_client.get_opponent(player_info["team"], sport_key)
+    is_home = odds_client.is_home_game(player_info["team"], sport_key)
+    
+    # Check injury status from ESPN
+    from espn_client import get_injury_status
+    injury_status = get_injury_status(espn_sport, espn_league, player_info["espn_id"])
     
     for market in player_info["markets"]:
         stat_key = market["stat"]
@@ -546,7 +551,9 @@ async def props(interaction: discord.Interaction, sport: str, player: str):
         prediction = compute_prediction(
             data, stat_key, sport.lower(),
             opponent_team=opponent_team,
-            market_type=market["key"]
+            market_type=market["key"],
+            is_home=is_home,
+            injury_status=injury_status,
         )
         
         if prediction is None:
@@ -626,20 +633,25 @@ def _process_player_for_top(player_key, info, espn, odds_client, sport_key, espn
         
         primary_market = info["markets"][0]
         stat_key = primary_market["stat"]
-        
+
         if stat_key not in data.columns:
             return None
-        
-        # Find the actual opponent
+
+        # Find the actual opponent and venue
         opponent_team = odds_client.get_opponent(info["team"], sport_key)
-        
-        # Use smart predictor with real opponent
+        is_home = odds_client.is_home_game(info["team"], sport_key)
+
+        from espn_client import get_injury_status
+        injury_status = get_injury_status(espn_sport, espn_league, info["espn_id"])
+
         prediction = compute_prediction(
             data, stat_key, espn_league,
             opponent_team=opponent_team,
-            market_type=primary_market["key"]
+            market_type=primary_market["key"],
+            is_home=is_home,
+            injury_status=injury_status,
         )
-        
+
         if prediction is None:
             return None
         

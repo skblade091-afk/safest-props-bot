@@ -1,7 +1,10 @@
 """
 Enhanced prediction logic for player props.
-Combines weighted recent form, opponent defense, and consistency metrics.
+Combines weighted recent form, opponent defense, home/away splits,
+rest days, and injury status.
 """
+
+from datetime import datetime
 
 NFL_PASS_DEFENSE_RANK = {
     "Ravens": 1, "Bills": 2, "Jets": 3, "Browns": 4, "Packers": 5,
@@ -34,45 +37,79 @@ NBA_DEFENSE_RANK = {
 
 
 def _lookup_rank(team_name: str, rank_dict: dict, default: int = 16) -> int:
-    """
-    Flexible team lookup. Handles full names like 'GB Packers',
-    'ATL Falcons', 'LA Chargers', etc. matching keys like 'Packers'.
-    """
+    """Flexible team lookup — handles 'GB Packers' matching 'Packers'."""
     if not team_name:
         return default
-    
-    # Try exact match
     if team_name in rank_dict:
         return rank_dict[team_name]
-    
-    # Try partial match — either key is in team_name, or team_name is in key
     team_lower = team_name.lower()
     for key, rank in rank_dict.items():
         key_lower = key.lower()
         if key_lower in team_lower or team_lower in key_lower:
             return rank
-    
     return default
 
 
-def compute_prediction(df, stat_key, sport, opponent_team, market_type):
+def _compute_home_away_split(df, stat_key):
+    """
+    Returns (home_avg, away_avg) from the player's recent games.
+    Falls back to None if not enough data.
+    """
+    if 'home_away' not in df.columns:
+        return None, None
+    recent = df.tail(10)
+    home_games = recent[recent['home_away'] == 'HOME']
+    away_games = recent[recent['home_away'] == 'AWAY']
+    home_avg = home_games[stat_key].mean() if len(home_games) >= 2 else None
+    away_avg = away_games[stat_key].mean() if len(away_games) >= 2 else None
+    return home_avg, away_avg
+
+
+def _compute_rest_days(df):
+    """
+    Days since the player's most recent game.
+    Returns None if dates can't be parsed.
+    """
+    if 'date' not in df.columns or df.empty:
+        return None
+    try:
+        dates = []
+        for d in df['date'].dropna().tolist():
+            try:
+                parsed = datetime.fromisoformat(d.replace('Z', ''))
+                dates.append(parsed)
+            except Exception:
+                continue
+        if not dates:
+            return None
+        dates.sort()
+        most_recent = dates[-1]
+        return (datetime.utcnow() - most_recent).days
+    except Exception:
+        return None
+
+
+def compute_prediction(df, stat_key, sport, opponent_team, market_type,
+                       is_home=None, injury_status=None):
     """
     Returns an enhanced prediction dict with adjusted average and confidence.
+    New parameters:
+      is_home: True if the upcoming game is at home, False if away, None if unknown
+      injury_status: 'OUT', 'QUESTIONABLE', 'DAY-TO-DAY', or None
     """
     if df is None or df.empty or len(df) < 3:
         return None
 
     recent = df.tail(5).copy()
     values = recent[stat_key].dropna().astype(float).values
-
     if len(values) < 3:
         return None
 
-    # --- Weighted average (recent games matter more) ---
+    # --- Base weighted average ---
     weights = [1, 1.5, 2, 2.5, 3][-len(values):]
     weighted_avg = sum(v * w for v, w in zip(values, weights)) / sum(weights)
 
-    # --- Consistency score ---
+    # --- Consistency ---
     if weighted_avg > 0:
         cv = values.std() / weighted_avg
     else:
@@ -82,10 +119,43 @@ def compute_prediction(df, stat_key, sport, opponent_team, market_type):
     # --- Sample size ---
     sample_score = min(len(df) / 10.0, 1.0)
 
+    # --- Home/away adjustment ---
+    home_avg, away_avg = _compute_home_away_split(df, stat_key)
+    home_away_adjustment = 0.0
+    home_away_reason = ""
+
+    if is_home is not None and home_avg is not None and away_avg is not None:
+        if is_home:
+            if weighted_avg > 0:
+                split_bonus = (home_avg - weighted_avg) / weighted_avg
+                split_bonus = max(-0.12, min(split_bonus, 0.12))
+                home_away_adjustment = weighted_avg * split_bonus
+                if abs(split_bonus) > 0.05:
+                    home_away_reason = f"Home game (avg {home_avg:.1f} at home)"
+        else:
+            if weighted_avg > 0:
+                split_bonus = (away_avg - weighted_avg) / weighted_avg
+                split_bonus = max(-0.12, min(split_bonus, 0.12))
+                home_away_adjustment = weighted_avg * split_bonus
+                if abs(split_bonus) > 0.05:
+                    home_away_reason = f"Away game (avg {away_avg:.1f} away)"
+
+    # --- Rest days adjustment ---
+    rest_days = _compute_rest_days(df)
+    rest_adjustment = 0.0
+    rest_reason = ""
+    if rest_days is not None:
+        if rest_days <= 4:
+            rest_adjustment = -0.03 * weighted_avg
+            rest_reason = f"Short rest ({rest_days}d)"
+        elif rest_days >= 10:
+            rest_adjustment = +0.02 * weighted_avg
+            rest_reason = f"Well rested ({rest_days}d)"
+
     # --- Opponent defense adjustment ---
-    adjustment = 0.0
-    adjustment_reason = ""
-    multiplier = 1.0  # default — used in confidence penalty below
+    defense_adjustment = 0.0
+    defense_reason = ""
+    multiplier = 1.0
 
     if sport == "nfl":
         if "pass" in market_type:
@@ -98,42 +168,75 @@ def compute_prediction(df, stat_key, sport, opponent_team, market_type):
             rank = 16
             label = "defense"
 
-        rank_pct = (rank - 1) / 31  # 0 = best, 1 = worst
-        multiplier = 0.9 + (rank_pct * 0.2)  # 0.90x to 1.10x
-        adjustment = weighted_avg * (multiplier - 1.0)
+        rank_pct = (rank - 1) / 31
+        multiplier = 0.9 + (rank_pct * 0.2)
+        defense_adjustment = weighted_avg * (multiplier - 1.0)
 
         if rank <= 10:
-            adjustment_reason = f"Tough {label} (#{rank})"
+            defense_reason = f"Tough {label} (#{rank})"
         elif rank >= 23:
-            adjustment_reason = f"Weak {label} (#{rank})"
+            defense_reason = f"Weak {label} (#{rank})"
 
     elif sport == "nba":
         rank = _lookup_rank(opponent_team, NBA_DEFENSE_RANK, 15)
         rank_pct = (rank - 1) / 29
         multiplier = 0.92 + (rank_pct * 0.16)
-        adjustment = weighted_avg * (multiplier - 1.0)
+        defense_adjustment = weighted_avg * (multiplier - 1.0)
 
         if rank <= 10:
-            adjustment_reason = f"Tough defense (#{rank})"
+            defense_reason = f"Tough defense (#{rank})"
         elif rank >= 21:
-            adjustment_reason = f"Weak defense (#{rank})"
+            defense_reason = f"Weak defense (#{rank})"
 
-    adjusted_avg = weighted_avg + adjustment
+    # --- Injury adjustment ---
+    injury_adjustment = 0.0
+    injury_reason = ""
+    if injury_status:
+        status_upper = injury_status.upper()
+        if "OUT" in status_upper:
+            injury_adjustment = -0.50 * weighted_avg
+            injury_reason = "Listed as OUT ⚠️"
+        elif "QUESTIONABLE" in status_upper:
+            injury_adjustment = -0.15 * weighted_avg
+            injury_reason = "Questionable ⚠️"
+        elif "DAY-TO-DAY" in status_upper or "DAY TO DAY" in status_upper:
+            injury_adjustment = -0.08 * weighted_avg
+            injury_reason = "Day-to-day"
+
+    adjusted_avg = weighted_avg + defense_adjustment + home_away_adjustment + rest_adjustment + injury_adjustment
+
+    # --- Combine reasons into one line ---
+    reasons = [r for r in [defense_reason, home_away_reason, rest_reason, injury_reason] if r]
+    adjustment_reason = " • ".join(reasons)
 
     # --- Confidence score ---
     confidence = 0.5 * consistency_score + 0.3 * sample_score + 0.2 * 0.5
 
-    # Penalize if the defense adjustment is huge (uncertainty)
-    if abs(multiplier - 1.0) > 0.08:
-        confidence -= 0.05
+    # Penalty for large adjustments (more uncertainty)
+    total_adj_pct = abs(adjusted_avg - weighted_avg) / weighted_avg if weighted_avg > 0 else 0
+    if total_adj_pct > 0.10:
+        confidence -= 0.08
+    elif total_adj_pct > 0.05:
+        confidence -= 0.04
 
-    confidence = max(0.30, min(confidence, 0.95))
+    # Injury heavily penalizes confidence
+    if injury_status:
+        if "OUT" in injury_status.upper():
+            confidence -= 0.30
+        elif "QUESTIONABLE" in injury_status.upper():
+            confidence -= 0.10
+
+    confidence = max(0.20, min(confidence, 0.95))
 
     return {
         "raw_avg": weighted_avg,
         "adjusted_avg": adjusted_avg,
         "confidence": confidence,
         "adjustment_reason": adjustment_reason,
+        "home_away_adj": home_away_adjustment,
+        "rest_adj": rest_adjustment,
+        "defense_adj": defense_adjustment,
+        "injury_adj": injury_adjustment,
     }
 
 

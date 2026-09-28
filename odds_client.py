@@ -74,6 +74,23 @@ class OddsClient:
                 return home
         return ""
 
+    def is_home_game(self, team_name: str, sport_key: str = "americanfootball_nfl"):
+        """
+        Returns True if the given team is the home team in their next game,
+        False if away, None if unknown.
+        """
+        events = self._get_events(sport_key)
+        team_lower = team_name.lower()
+        
+        for event in events:
+            home = event.get('home_team', '')
+            away = event.get('away_team', '')
+            if team_lower in home.lower():
+                return True
+            if team_lower in away.lower():
+                return False
+        return None
+
     def get_player_props(self, player_name: str, team_name: str, market_key: str = "player_pass_yds", sport_key: str = "americanfootball_nfl"):
         """Fetches available lines for a specific player and market (uses cache)."""
         all_lines = []

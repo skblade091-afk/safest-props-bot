@@ -51,7 +51,7 @@ class ESPNClient:
     def get_player_gamelog(self, sport: str, league: str, athlete_id: int, stat_map: dict) -> Optional[pd.DataFrame]:
         """Fetches a player's game-by-game log with persistent file cache."""
         path = self._cache_path(sport, league, athlete_id)
-        
+
         if self._is_fresh(path):
             df = self._load(path)
             if df is not None and not df.empty:
@@ -59,9 +59,9 @@ class ESPNClient:
                 available = [c for c in needed_cols if c in df.columns]
                 if available:
                     return df
-        
+
         url = f"{self.BASE_URL}/{sport}/{league}/athletes/{athlete_id}/gamelog"
-        
+
         # Try up to 2 times with a delay between attempts
         for attempt in range(2):
             try:
@@ -71,19 +71,37 @@ class ESPNClient:
                     break
                 response.raise_for_status()
                 data = response.json()
-                
+
                 events = data.get('seasonTypes', [{}])[0].get('categories', [{}])[0].get('events', [])
                 if not events:
                     return None
-                
+
                 rows = []
                 for event in events:
                     stats = event.get('stats', [])
+
+                    # Determine home/away from the event object
+                    home_away = "HOME"
+                    try:
+                        if event.get('homeAway'):
+                            home_away = event.get('homeAway').upper()
+                        elif event.get('atVs'):
+                            home_away = "AWAY" if event.get('atVs') == 'at' else "HOME"
+                        else:
+                            home_team_id = event.get('homeTeamId') or event.get('homeTeam', {}).get('id')
+                            player_team_id = event.get('team', {}).get('id')
+                            if home_team_id and player_team_id:
+                                home_away = "HOME" if str(home_team_id) == str(player_team_id) else "AWAY"
+                    except Exception:
+                        pass
+
                     row = {
                         'game_id': event.get('eventId'),
                         'date': event.get('gameDate'),
                         'opponent': event.get('opponent', {}).get('abbreviation'),
+                        'home_away': home_away,
                     }
+
                     for stat_name, stat_index in stat_map.items():
                         try:
                             if stat_index < len(stats) and stats[stat_index]:
@@ -95,29 +113,26 @@ class ESPNClient:
                                 row[stat_name] = 0
                         except (ValueError, IndexError):
                             row[stat_name] = 0
+
                     rows.append(row)
-                
+
                 df = pd.DataFrame(rows)
                 self._save(path, df)
                 return df
             except requests.RequestException:
                 if attempt == 0:
-                    time.sleep(2)  # Wait 2 seconds before retry
+                    time.sleep(2)
                     continue
                 else:
-                    # Both attempts failed — try stale cache
                     df = self._load(path)
                     return df if df is not None and not df.empty else None
-        
+
         # Hit a 404 — no retry, just return stale cache if any
         df = self._load(path)
         return df if df is not None and not df.empty else None
 
     def refresh_all(self, players_dict: dict, sport: str, league: str, force: bool = False) -> tuple:
-        """
-        Refresh all players' gamelogs one at a time with a small delay.
-        Returns (success_count, fail_count).
-        """
+        """Refresh all players' gamelogs one at a time with a small delay."""
         success = 0
         failed = 0
         for player_key, info in players_dict.items():
@@ -129,9 +144,46 @@ class ESPNClient:
                         success += 1
                     else:
                         failed += 1
-                    # Be gentle with ESPN — 0.5s between requests
                     time.sleep(0.5)
             except Exception as e:
                 failed += 1
                 print(f"Refresh failed for {info.get('name', player_key)}: {e}")
         return success, failed
+
+
+# --- Injury status lookup ---
+_injury_cache = {}
+INJURY_CACHE_TTL = 1800  # 30 minutes
+
+
+def get_injury_status(sport: str, league: str, athlete_id: int):
+    """
+    Fetches the injury status for a player from ESPN's injury report.
+    Returns a string like 'OUT', 'QUESTIONABLE', 'DAY-TO-DAY', or None.
+    Caches results for 30 minutes.
+    """
+    cache_key = f"{sport}:{league}:{athlete_id}"
+    cached = _injury_cache.get(cache_key)
+    if cached and (time.time() - cached['time']) < INJURY_CACHE_TTL:
+        return cached['status']
+
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/injuries"
+    status = None
+
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            for team_block in data.get('injuries', []):
+                for injury in team_block.get('injuries', []):
+                    athlete = injury.get('athlete', {})
+                    if str(athlete.get('id')) == str(athlete_id):
+                        status = injury.get('status', '')
+                        break
+                if status:
+                    break
+    except requests.RequestException:
+        pass
+
+    _injury_cache[cache_key] = {'status': status, 'time': time.time()}
+    return status
