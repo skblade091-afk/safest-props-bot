@@ -371,6 +371,17 @@ tree = app_commands.CommandTree(client)
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong! The bot is online and working!")
 
+@tree.command(name="dbcount", description="[Dev] Check how many predictions are in the database")
+async def dbcount(interaction: discord.Interaction):
+    await interaction.response.defer()
+    from tracker import _get_connection
+    conn = _get_connection()
+    try:
+        total = conn.execute("SELECT COUNT(*) as c FROM predictions").fetchone()["c"]
+        pending = conn.execute("SELECT COUNT(*) as c FROM predictions WHERE result = 'PENDING'").fetchone()["c"]
+        await interaction.followup.send(f"📊 Total predictions: **{total}** | Pending: **{pending}**")
+    finally:
+        conn.close()
 
 @tree.command(name="roster", description="List all available players, optionally filtered by sport")
 @app_commands.describe(sport="Optional: filter to just one sport")
