@@ -771,6 +771,121 @@ async def top(interaction: discord.Interaction, sport: str):
     embed.set_footer(text="Data from ESPN & PropLine | Bet responsibly.")
     await interaction.followup.send(embed=embed)
 
+@tree.command(name="record", description="Show the bot's historical prediction record")
+@app_commands.describe(sport="Optional: filter to NFL or NBA only")
+@app_commands.choices(sport=[
+    app_commands.Choice(name="NFL", value="nfl"),
+    app_commands.Choice(name="NBA", value="nba"),
+])
+async def record(interaction: discord.Interaction, sport: str = None):
+    await interaction.response.defer()
+    from tracker import get_stats
+    
+    stats = get_stats(sport=sport)
+    overall = stats["overall"]
+    
+    wins = overall.get("wins") or 0
+    losses = overall.get("losses") or 0
+    pushes = overall.get("pushes") or 0
+    total = wins + losses
+    
+    if total == 0:
+        embed = discord.Embed(
+            title="📊 Prediction Record",
+            description="No resolved predictions yet. Check back after some games have finished.",
+            color=0x808080
+        )
+        embed.add_field(
+            name="Pending",
+            value=f"**{stats['pending']}** predictions waiting for results",
+            inline=False
+        )
+        await interaction.followup.send(embed=embed)
+        return
+    
+    win_rate = wins / total * 100
+    
+    # Color based on performance
+    if win_rate >= 55:
+        color = 0x00ff00  # green — profitable
+    elif win_rate >= 50:
+        color = 0xffd700  # gold — break-even
+    else:
+        color = 0xff0000  # red — losing
+    
+    # Emoji for win rate
+    if win_rate >= 60:
+        emoji = "🔥"
+    elif win_rate >= 55:
+        emoji = "🟢"
+    elif win_rate >= 50:
+        emoji = "⚪"
+    else:
+        emoji = "🔴"
+    
+    sport_label = f" ({sport.upper()})" if sport else ""
+    embed = discord.Embed(
+        title=f"📊 Prediction Record{sport_label}",
+        description=f"**{wins}W - {losses}L** ({win_rate:.1f}%) {emoji}",
+        color=color
+    )
+    
+    if pushes > 0:
+        embed.add_field(
+            name="Pushes",
+            value=str(pushes),
+            inline=True
+        )
+    
+    embed.add_field(
+        name="Pending",
+        value=str(stats["pending"]),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Total Resolved",
+        value=str(total),
+        inline=True
+    )
+    
+    # Confidence breakdown
+    conf_lines = []
+    for bucket, label in [("high", "🔥 High"), ("medium", "✅ Medium"), ("low", "⚠️ Low")]:
+        b = stats["by_confidence"].get(bucket, {})
+        b_wins = b.get("wins") or 0
+        b_losses = b.get("losses") or 0
+        b_total = b_wins + b_losses
+        if b_total > 0:
+            b_rate = b_wins / b_total * 100
+            conf_lines.append(f"{label}: **{b_wins}W - {b_losses}L** ({b_rate:.0f}%)")
+    
+    if conf_lines:
+        embed.add_field(
+            name="By Confidence",
+            value="\n".join(conf_lines),
+            inline=False
+        )
+    
+    # Market breakdown
+    market_lines = []
+    for market, m in stats["by_market"].items():
+        m_wins = m.get("wins") or 0
+        m_losses = m.get("losses") or 0
+        m_total = m_wins + m_losses
+        if m_total > 0:
+            m_rate = m_wins / m_total * 100
+            market_lines.append(f"**{market}**: {m_wins}W - {m_losses}L ({m_rate:.0f}%)")
+    
+    if market_lines:
+        embed.add_field(
+            name="By Market",
+            value="\n".join(market_lines[:8]),  # cap at 8 markets
+            inline=False
+        )
+    
+    embed.set_footer(text="Data from ESPN & PropLine | Bet responsibly.")
+    await interaction.followup.send(embed=embed)
 
 # --- Background refresh task ---
 @tasks.loop(hours=6)
