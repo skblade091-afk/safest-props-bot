@@ -997,6 +997,52 @@ async def gameinfo(interaction: discord.Interaction, game_id: str):
     
     await interaction.followup.send(msg[:1900])
 
+@tree.command(name="debugpred", description="[Dev] Show predictor internals for a player")
+@app_commands.describe(player="Player key like jordan_love")
+async def debugpred(interaction: discord.Interaction, player: str):
+    await interaction.response.defer()
+    from predictor import _compute_home_away_split, _compute_rest_days
+    from espn_client import ESPNClient, get_upcoming_game
+    
+    player_key = player.lower()
+    if player_key not in PLAYERS:
+        await interaction.followup.send("Not found.")
+        return
+    
+    info = PLAYERS[player_key]
+    espn = ESPNClient()
+    data = espn.get_player_gamelog(
+        'football', 'nfl',
+        info["espn_id"], info["espn_stat_map"],
+        team_name=info["team"]
+    )
+    
+    if data is None or data.empty:
+        await interaction.followup.send("No data.")
+        return
+    
+    stat_key = info["markets"][0]["stat"]
+    home_avg, away_avg = _compute_home_away_split(data, stat_key)
+    rest_days = _compute_rest_days(data)
+    upcoming = get_upcoming_game('football', 'nfl', info["team"])
+    
+    msg = (
+        f"**Player:** {info['name']}\n"
+        f"**Games in log:** {len(data)}\n"
+        f"**Home games:** {len(data[data['home_away'] == 'HOME'])}\n"
+        f"**Away games:** {len(data[data['home_away'] == 'AWAY'])}\n"
+        f"**Home avg:** {home_avg}\n"
+        f"**Away avg:** {away_avg}\n"
+        f"**Rest days:** {rest_days}\n"
+        f"**Upcoming game:** {upcoming}\n\n"
+        f"**Raw dates:**\n```\n"
+    )
+    for d in data.tail(5)['date'].tolist():
+        msg += f"{d}\n"
+    msg += "```"
+    
+    await interaction.followup.send(msg[:1900])
+
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
 async def debuglog(interaction: discord.Interaction, player: str):
