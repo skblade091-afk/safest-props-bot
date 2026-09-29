@@ -124,25 +124,24 @@ def compute_prediction(df, stat_key, sport, opponent_team, market_type,
     sample_score = min(len(df) / 10.0, 1.0)
 
     # --- Home/away adjustment ---
+    # Apply the split for whichever venue the upcoming game is at,
+    # as long as we have enough games in that specific split.
     home_avg, away_avg = _compute_home_away_split(df, stat_key)
     home_away_adjustment = 0.0
     home_away_reason = ""
 
-    if is_home is not None and home_avg is not None and away_avg is not None:
-        if is_home:
-            if weighted_avg > 0:
-                split_bonus = (home_avg - weighted_avg) / weighted_avg
-                split_bonus = max(-0.12, min(split_bonus, 0.12))
-                home_away_adjustment = weighted_avg * split_bonus
-                if abs(split_bonus) > 0.05:
-                    home_away_reason = f"Home game (avg {home_avg:.1f} at home)"
-        else:
-            if weighted_avg > 0:
-                split_bonus = (away_avg - weighted_avg) / weighted_avg
-                split_bonus = max(-0.12, min(split_bonus, 0.12))
-                home_away_adjustment = weighted_avg * split_bonus
-                if abs(split_bonus) > 0.05:
-                    home_away_reason = f"Away game (avg {away_avg:.1f} away)"
+    if is_home is True and home_avg is not None and weighted_avg > 0:
+        split_bonus = (home_avg - weighted_avg) / weighted_avg
+        split_bonus = max(-0.12, min(split_bonus, 0.12))
+        home_away_adjustment = weighted_avg * split_bonus
+        if abs(split_bonus) > 0.03:
+            home_away_reason = f"Home game (avg {home_avg:.1f} at home)"
+    elif is_home is False and away_avg is not None and weighted_avg > 0:
+        split_bonus = (away_avg - weighted_avg) / weighted_avg
+        split_bonus = max(-0.12, min(split_bonus, 0.12))
+        home_away_adjustment = weighted_avg * split_bonus
+        if abs(split_bonus) > 0.03:
+            home_away_reason = f"Away game (avg {away_avg:.1f} away)"
 
     # --- Rest days adjustment ---
     rest_days = _compute_rest_days(df)
