@@ -5,6 +5,7 @@ rest days, and injury status.
 """
 
 from datetime import datetime
+from datetime import datetime, timezone
 
 NFL_PASS_DEFENSE_RANK = {
     "Ravens": 1, "Bills": 2, "Jets": 3, "Browns": 4, "Packers": 5,
@@ -68,7 +69,7 @@ def _compute_home_away_split(df, stat_key):
 def _compute_rest_days(df):
     """
     Days since the player's most recent game.
-    Returns None if dates can't be parsed.
+    Handles timezone-aware dates by converting to naive UTC.
     """
     if 'date' not in df.columns or df.empty:
         return None
@@ -77,6 +78,9 @@ def _compute_rest_days(df):
         for d in df['date'].dropna().tolist():
             try:
                 parsed = datetime.fromisoformat(d.replace('Z', ''))
+                # Strip timezone to make it naive UTC
+                if parsed.tzinfo is not None:
+                    parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
                 dates.append(parsed)
             except Exception:
                 continue

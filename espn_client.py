@@ -71,25 +71,26 @@ UPCOMING_CACHE_TTL = 6 * 60 * 60  # 6 hours
 def get_upcoming_game(sport: str, league: str, team_name: str) -> dict:
     """
     Find the upcoming game for a team using ESPN's scoreboard.
-    Looks 14 days ahead. Returns {'opponent': str, 'is_home': bool} or {}.
+    Iterates day by day over the next 21 days (more reliable than range queries).
+    Returns {'opponent': str, 'is_home': bool} or {}.
     """
     cache_key = f"{sport}:{league}:{team_name}"
     cached = _upcoming_cache.get(cache_key)
     if cached and (time.time() - cached['time']) < UPCOMING_CACHE_TTL:
         return cached['data']
 
-    today = datetime.utcnow()
-    end = today + timedelta(days=14)
-    date_range = f"{today.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
-
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?dates={date_range}"
+    team_lower = team_name.lower()
     result = {}
 
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code == 200:
+    for offset in range(0, 21):
+        check_date = datetime.utcnow() + timedelta(days=offset)
+        date_str = check_date.strftime('%Y%m%d')
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?dates={date_str}"
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code != 200:
+                continue
             data = r.json()
-            team_lower = team_name.lower()
             for event in data.get('events', []):
                 comps = event.get('competitions', [])
                 if not comps:
@@ -111,8 +112,10 @@ def get_upcoming_game(sport: str, league: str, team_name: str) -> dict:
                         break
                 if result:
                     break
-    except requests.RequestException:
-        pass
+        except requests.RequestException:
+            continue
+        if result:
+            break
 
     _upcoming_cache[cache_key] = {'data': result, 'time': time.time()}
     return result
