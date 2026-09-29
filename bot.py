@@ -399,31 +399,7 @@ async def checkresults(interaction: discord.Interaction):
         f"❌ Errors: **{errors}**"
     )
 
-@tree.command(name="testresolve", description="[Dev] Force-resolve one pending prediction with a fake value")
-async def testresolve(interaction: discord.Interaction):
-    await interaction.response.defer()
-    from tracker import get_pending_predictions, resolve_prediction
-    
-    pending = get_pending_predictions()
-    # Filter out SKIP predictions
-    pending = [p for p in pending if p["recommendation"] != "SKIP"]
-    if not pending:
-        await interaction.followup.send("No resolvable predictions (SKIPs excluded).")
-        return
-    
-    pred = pending[0]
-    # Simulate: actual value = line + 5 (should produce OVER win if recommendation is OVER)
-    fake_actual = pred["line"] + 5
-    result = resolve_prediction(pred["id"], fake_actual)
-    
-    await interaction.followup.send(
-        f"🧪 **Test Resolve**\n"
-        f"Player: {pred['player_name']}\n"
-        f"Market: {pred['market_display']}\n"
-        f"Line: {pred['line']} | Recommendation: {pred['recommendation']}\n"
-        f"Fake actual: {fake_actual}\n"
-        f"Result: **{result}**"
-    )
+
 
 @tree.command(name="roster", description="List all available players, optionally filtered by sport")
 @app_commands.describe(sport="Optional: filter to just one sport")
@@ -899,103 +875,7 @@ async def clearcache(interaction: discord.Interaction):
                 count += 1
     await interaction.followup.send(f"🗑️ Deleted {count} cached files.")
 
-@tree.command(name="rawdump", description="[Dev] Dump raw ESPN JSON structure")
-async def rawdump(interaction: discord.Interaction):
-    await interaction.response.defer()
-    import requests, json
-    
-    url = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/4036378/gamelog"
-    r = requests.get(url, timeout=10)
-    data = r.json()
-    
-    # Top-level keys
-    top_keys = list(data.keys())
-    
-    # First event's keys inside seasonTypes
-    first_event_keys = []
-    try:
-        first_event_keys = list(data['seasonTypes'][0]['categories'][0]['events'][0].keys())
-    except Exception as e:
-        first_event_keys = [f"error: {e}"]
-    
-    # Show the first event object (truncated)
-    first_event_sample = ""
-    try:
-        ev = data['seasonTypes'][0]['categories'][0]['events'][0]
-        first_event_sample = json.dumps(ev, indent=1)[:800]
-    except Exception as e:
-        first_event_sample = f"error: {e}"
-    
-    # Events dict info
-    events_dict = data.get('events', {})
-    events_info = f"type={type(events_dict).__name__}"
-    first_event_meta = ""
-    if isinstance(events_dict, dict) and events_dict:
-        first_key = list(events_dict.keys())[0]
-        events_info += f", len={len(events_dict)}, first key={first_key}"
-        first_event_meta = json.dumps(events_dict[first_key], indent=1)[:800]
-    elif isinstance(events_dict, list):
-        events_info += f", len={len(events_dict)}"
-        if events_dict:
-            first_event_meta = json.dumps(events_dict[0], indent=1)[:800]
-    
-    msg = (
-        f"**Top-level keys:** `{top_keys}`\n\n"
-        f"**First event keys (in seasonTypes):** `{first_event_keys}`\n\n"
-        f"**First event (seasonTypes):**\n```json\n{first_event_sample}\n```\n\n"
-        f"**Events dict:** {events_info}\n\n"
-        f"**First event metadata (events dict):**\n```json\n{first_event_meta}\n```"
-    )
-    
-    # Discord has 2000 char limit per message, so split if needed
-    if len(msg) > 1900:
-        await interaction.followup.send(msg[:1900])
-        if len(msg) > 1900:
-            await interaction.followup.send(msg[1900:3800])
-    else:
-        await interaction.followup.send(msg)
 
-@tree.command(name="gameinfo", description="[Dev] Test game summary lookup")
-async def gameinfo(interaction: discord.Interaction, game_id: str):
-    await interaction.response.defer()
-    import requests, json
-    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={game_id}"
-    r = requests.get(url, timeout=10)
-    data = r.json()
-    
-    all_keys = list(data.keys())
-    
-    # Check if header exists and what's in it
-    header_info = "no header"
-    if 'header' in data:
-        header = data['header']
-        comps = header.get('competitions', [])
-        if comps:
-            competitors = comps[0].get('competitors', [])
-            teams = []
-            for c in competitors:
-                team = c.get('team', {})
-                teams.append(f"{c.get('homeAway')}: {team.get('displayName') or team.get('name')}")
-            header_info = " | ".join(teams)
-        else:
-            header_info = f"header exists but no competitions. keys: {list(header.keys())}"
-    
-    # Also check gameInfo
-    game_info_info = "no gameInfo"
-    if 'gameInfo' in data:
-        gi = data['gameInfo']
-        game_info_info = f"keys={list(gi.keys())[:8]}"
-        # Try to find venue / teams
-        if 'venue' in gi:
-            game_info_info += f" | venue={gi['venue'].get('fullName', '?')}"
-    
-    msg = (
-        f"**All top keys:** `{all_keys}`\n\n"
-        f"**Header:** {header_info}\n\n"
-        f"**gameInfo:** {game_info_info}"
-    )
-    
-    await interaction.followup.send(msg[:1900])
 
 @tree.command(name="debugpred", description="[Dev] Show predictor internals for a player")
 @app_commands.describe(player="Player key like jordan_love")
