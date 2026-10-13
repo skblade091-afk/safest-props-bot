@@ -923,6 +923,72 @@ async def debugpred(interaction: discord.Interaction, player: str):
     
     await interaction.followup.send(msg[:1900])
 
+@tree.command(name="diag", description="[Dev] Diagnose PropLine + ESPN connectivity")
+async def diag(interaction: discord.Interaction):
+    await interaction.response.defer()
+    import requests, os
+    from dotenv import load_dotenv
+    load_dotenv()
+    API_KEY = os.getenv("PROPLINE_API_KEY")
+    BASE_URL = "https://api.prop-line.com"
+    HEADERS = {"X-API-Key": API_KEY}
+    
+    report = []
+    
+    # 1. Is the PropLine API key present?
+    report.append(f"**API key set:** {'✅ yes' if API_KEY else '❌ NO'}")
+    if API_KEY:
+        report.append(f"**Key prefix:** `{API_KEY[:8]}...`")
+    
+    # 2. Does /v1/sports work?
+    try:
+        r = requests.get(f"{BASE_URL}/v1/sports", headers=HEADERS, timeout=10)
+        report.append(f"**/v1/sports:** status {r.status_code}")
+        if r.status_code == 200:
+            sports = r.json()
+            report.append(f"**Sports returned:** {len(sports)}")
+    except Exception as e:
+        report.append(f"**/v1/sports failed:** {e}")
+    
+    # 3. Does /v1/sports/americanfootball_nfl/events work?
+    try:
+        r = requests.get(f"{BASE_URL}/v1/sports/americanfootball_nfl/events", headers=HEADERS, timeout=10)
+        report.append(f"**NFL events:** status {r.status_code}")
+        if r.status_code == 200:
+            events = r.json()
+            report.append(f"**NFL events count:** {len(events)}")
+            if events:
+                # Show first event
+                e = events[0]
+                report.append(f"**First event:** {e.get('away_team')} @ {e.get('home_team')} (ID {e.get('id')})")
+    except Exception as e:
+        report.append(f"**NFL events failed:** {e}")
+    
+    # 4. Try odds for the first event
+    try:
+        r = requests.get(f"{BASE_URL}/v1/sports/americanfootball_nfl/events", headers=HEADERS, timeout=10)
+        events = r.json() if r.status_code == 200 else []
+        if events:
+            eid = events[0].get('id')
+            r2 = requests.get(
+                f"{BASE_URL}/v1/sports/americanfootball_nfl/odds",
+                headers=HEADERS,
+                params={"event_id": eid, "markets": "player_pass_yds"},
+                timeout=10
+            )
+            report.append(f"**Odds for event {eid}:** status {r2.status_code}")
+            if r2.status_code == 200:
+                data = r2.json()
+                if isinstance(data, list) and data:
+                    bm_count = len(data[0].get('bookmakers', []))
+                    report.append(f"**Bookmakers:** {bm_count}")
+                else:
+                    report.append(f"**Odds response:** empty or unexpected")
+    except Exception as e:
+        report.append(f"**Odds test failed:** {e}")
+    
+    await interaction.followup.send("\n".join(report)[:1900])
+
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
 async def debuglog(interaction: discord.Interaction, player: str):
