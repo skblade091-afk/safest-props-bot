@@ -922,7 +922,7 @@ async def debugpred(interaction: discord.Interaction, player: str):
     msg += "```"
     
     await interaction.followup.send(msg[:1900])
-
+    
 @tree.command(name="diag", description="[Dev] Diagnose PropLine + ESPN connectivity")
 async def diag(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -935,57 +935,78 @@ async def diag(interaction: discord.Interaction):
     
     report = []
     
-    # 1. Is the PropLine API key present?
-    report.append(f"**API key set:** {'✅ yes' if API_KEY else '❌ NO'}")
-    if API_KEY:
-        report.append(f"**Key prefix:** `{API_KEY[:8]}...`")
-    
-    # 2. Does /v1/sports work?
-    try:
-        r = requests.get(f"{BASE_URL}/v1/sports", headers=HEADERS, timeout=10)
-        report.append(f"**/v1/sports:** status {r.status_code}")
-        if r.status_code == 200:
-            sports = r.json()
-            report.append(f"**Sports returned:** {len(sports)}")
-    except Exception as e:
-        report.append(f"**/v1/sports failed:** {e}")
-    
-    # 3. Does /v1/sports/americanfootball_nfl/events work?
+    # 1. Get NFL events
     try:
         r = requests.get(f"{BASE_URL}/v1/sports/americanfootball_nfl/events", headers=HEADERS, timeout=10)
-        report.append(f"**NFL events:** status {r.status_code}")
-        if r.status_code == 200:
-            events = r.json()
-            report.append(f"**NFL events count:** {len(events)}")
-            if events:
-                # Show first event
-                e = events[0]
-                report.append(f"**First event:** {e.get('away_team')} @ {e.get('home_team')} (ID {e.get('id')})")
+        events = r.json()
+        report.append(f"**NFL events:** {len(events)}")
+        
+        # 2. Check which teams from our roster have upcoming games
+        roster_teams = set()
+        for info in PLAYERS.values():
+            roster_teams.add(info["team"].lower())
+        
+        matched = []
+        for event in events:
+            home = event.get('home_team', '').lower()
+            away = event.get('away_team', '').lower()
+            for team in roster_teams:
+                if team in home or team in away:
+                    matched.append(f"{event.get('away_team')} @ {event.get('home_team')}")
+                    break
+        
+        report.append(f"**Roster teams with upcoming games:** {len(matched)}")
+        for m in matched[:5]:
+            report.append(f"  • {m}")
+        
+        # 3. Test the first matching event for player props
+        if matched:
+            # Find first event that has a roster team
+            for event in events:
+                home = event.get('home_team', '').lower()
+                away = event.get('away_team', '').lower()
+                team_match = False
+                for team in roster_teams:
+                    if team in home or team in away:
+                        team_match = True
+                        break
+                if team_match:
+                    eid = event.get('id')
+                    r2 = requests.get(
+                        f"{BASE_URL}/v1/sports/americanfootball_nfl/odds",
+                        headers=HEADERS,
+                        params={"event_id": eid, "markets": "player_pass_yds"},
+                        timeout=10
+                    )
+                    data = r2.json()
+                    report.append(f"\n**Testing event {eid}:**")
+                    if isinstance(data, list) and data:
+                        bm_list = data[0].get('bookmakers', [])
+                        report.append(f"**Bookmakers:** {len(bm_list)}")
+                        # Count bookmakers with actual outcomes
+                        bms_with_props = 0
+                        total_outcomes = 0
+                        for bm in bm_list:
+                            for market in bm.get('markets', []):
+                                if market.get('outcomes'):
+                                    bms_with_props += 1
+                                    total_outcomes += len(market['outcomes'])
+                                    break
+                        report.append(f"**Bookmakers with player_pass_yds outcomes:** {bms_with_props}")
+                        report.append(f"**Total outcomes:** {total_outcomes}")
+                        # Show sample outcomes
+                        if total_outcomes > 0:
+                            for bm in bm_list:
+                                for market in bm.get('markets', []):
+                                    for outcome in market.get('outcomes', [])[:3]:
+                                        report.append(f"  • {outcome.get('description')} — {outcome.get('name')}")
+                                    break
+                                break
+                    else:
+                        report.append(f"**Empty response**")
+                    break
     except Exception as e:
-        report.append(f"**NFL events failed:** {e}")
-    
-    # 4. Try odds for the first event
-    try:
-        r = requests.get(f"{BASE_URL}/v1/sports/americanfootball_nfl/events", headers=HEADERS, timeout=10)
-        events = r.json() if r.status_code == 200 else []
-        if events:
-            eid = events[0].get('id')
-            r2 = requests.get(
-                f"{BASE_URL}/v1/sports/americanfootball_nfl/odds",
-                headers=HEADERS,
-                params={"event_id": eid, "markets": "player_pass_yds"},
-                timeout=10
-            )
-            report.append(f"**Odds for event {eid}:** status {r2.status_code}")
-            if r2.status_code == 200:
-                data = r2.json()
-                if isinstance(data, list) and data:
-                    bm_count = len(data[0].get('bookmakers', []))
-                    report.append(f"**Bookmakers:** {bm_count}")
-                else:
-                    report.append(f"**Odds response:** empty or unexpected")
-    except Exception as e:
-        report.append(f"**Odds test failed:** {e}")
+        report.append(f"**Failed:** {e}")
     
     await interaction.followup.send("\n".join(report)[:1900])
 
