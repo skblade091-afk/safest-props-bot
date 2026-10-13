@@ -922,7 +922,7 @@ async def debugpred(interaction: discord.Interaction, player: str):
     msg += "```"
     
     await interaction.followup.send(msg[:1900])
-    
+
 @tree.command(name="diag", description="[Dev] Diagnose PropLine + ESPN connectivity")
 async def diag(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -1009,6 +1009,43 @@ async def diag(interaction: discord.Interaction):
         report.append(f"**Failed:** {e}")
     
     await interaction.followup.send("\n".join(report)[:1900])
+
+@tree.command(name="dumpoutcome", description="[Dev] Dump one full outcome JSON")
+async def dumpoutcome(interaction: discord.Interaction):
+    await interaction.response.defer()
+    import requests, os, json
+    from dotenv import load_dotenv
+    load_dotenv()
+    API_KEY = os.getenv("PROPLINE_API_KEY")
+    HEADERS = {"X-API-Key": API_KEY}
+    BASE_URL = "https://api.prop-line.com"
+    
+    # Get events
+    r = requests.get(f"{BASE_URL}/v1/sports/americanfootball_nfl/events", headers=HEADERS, timeout=10)
+    events = r.json()
+    
+    # Find first event
+    eid = events[0].get('id')
+    
+    # Get player_pass_yds odds
+    r2 = requests.get(
+        f"{BASE_URL}/v1/sports/americanfootball_nfl/odds",
+        headers=HEADERS,
+        params={"event_id": eid, "markets": "player_pass_yds"},
+        timeout=10
+    )
+    data = r2.json()
+    
+    # Dump the first outcome we find
+    for bm in data[0].get('bookmakers', []):
+        for market in bm.get('markets', []):
+            for outcome in market.get('outcomes', []):
+                # Print the full outcome
+                dump = json.dumps(outcome, indent=1)
+                await interaction.followup.send(f"**Event:** {eid}\n**Outcome JSON:**\n```json\n{dump}\n```")
+                return
+    
+    await interaction.followup.send("No outcomes found.")
 
 @tree.command(name="debuglog", description="[Dev] Show raw gamelog for a player")
 @app_commands.describe(player="Player key like jordan_love")
